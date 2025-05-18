@@ -1,0 +1,1195 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="UTF-8"><meta name="description" content="Software Developer"><meta name="viewport" content="width=device-width, initial-scale=1.0"><link rel="icon" type="image/png" href="/favicon.svg"><meta property="og:title" content="Varshith Pawar H R"><meta property="og:description" content="Software Developer"><meta property="og:image" content="#"><meta property="og:url" content="#"><meta property="og:type" content="website"><meta property="og:site_name" content="Varshith Pawar H R"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,100..900;1,100..900&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,100..900;1,100..900&display=swap" media="print" onload="this.media='all'"><noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,100..900;1,100..900&display=swap"></noscript><title>Varshith Pawar H R</title><link rel="stylesheet" href="/_astro/index.CW7XdNFq.css"></head> <body class="bg-[--background] text-[--white] px-6 md:px-12 lg:px-24 xl:px-48"> <canvas id="fluid" data-astro-cid-z7jya4wf></canvas>  <script lang="js">
+  document.addEventListener('DOMContentLoaded', () => {
+    initFluid();
+  });
+
+  const initFluid = () => {
+    // anim setup || in an active project you can set this to the html body. however ive found a bound box to the viewport looks + performs better
+    const canvas = document.getElementById('fluid');
+    resizeCanvas();
+
+    let config = {
+      SIM_RESOLUTION: 128,
+      DYE_RESOLUTION: 1440,
+      CAPTURE_RESOLUTION: 512,
+      DENSITY_DISSIPATION: 3.5,
+      VELOCITY_DISSIPATION: 2,
+      PRESSURE: 0.1,
+      PRESSURE_ITERATIONS: 20,
+      CURL: 3,
+      SPLAT_RADIUS: 0.2,
+      SPLAT_FORCE: 6000,
+      SHADING: true,
+      COLOR_UPDATE_SPEED: 10,
+      PAUSED: false,
+      BACK_COLOR: { r: 0, g: 0, b: 0 },
+      TRANSPARENT: true,
+    };
+
+    function pointerPrototype() {
+      this.id = -1;
+      this.texcoordX = 0;
+      this.texcoordY = 0;
+      this.prevTexcoordX = 0;
+      this.prevTexcoordY = 0;
+      this.deltaX = 0;
+      this.deltaY = 0;
+      this.down = false;
+      this.moved = false;
+      this.color = [30, 0, 300];
+    }
+
+    let pointers = [];
+    pointers.push(new pointerPrototype());
+
+    const { gl, ext } = getWebGLContext(canvas);
+
+    if (!ext.supportLinearFiltering) {
+      config.DYE_RESOLUTION = 512;
+      config.SHADING = false;
+    }
+
+    function getWebGLContext(canvas) {
+      const params = { alpha: true, depth: false, stencil: false, antialias: false, preserveDrawingBuffer: false };
+
+      let gl = canvas.getContext('webgl2', params);
+      const isWebGL2 = !!gl;
+      if (!isWebGL2) gl = canvas.getContext('webgl', params) || canvas.getContext('experimental-webgl', params);
+
+      let halfFloat;
+      let supportLinearFiltering;
+      if (isWebGL2) {
+        gl.getExtension('EXT_color_buffer_float');
+        supportLinearFiltering = gl.getExtension('OES_texture_float_linear');
+      } else {
+        halfFloat = gl.getExtension('OES_texture_half_float');
+        supportLinearFiltering = gl.getExtension('OES_texture_half_float_linear');
+      }
+
+      gl.clearColor(0.0, 0.0, 0.0, 1.0);
+
+      const halfFloatTexType = isWebGL2 ? gl.HALF_FLOAT : halfFloat.HALF_FLOAT_OES;
+      let formatRGBA;
+      let formatRG;
+      let formatR;
+
+      if (isWebGL2) {
+        formatRGBA = getSupportedFormat(gl, gl.RGBA16F, gl.RGBA, halfFloatTexType);
+        formatRG = getSupportedFormat(gl, gl.RG16F, gl.RG, halfFloatTexType);
+        formatR = getSupportedFormat(gl, gl.R16F, gl.RED, halfFloatTexType);
+      } else {
+        formatRGBA = getSupportedFormat(gl, gl.RGBA, gl.RGBA, halfFloatTexType);
+        formatRG = getSupportedFormat(gl, gl.RGBA, gl.RGBA, halfFloatTexType);
+        formatR = getSupportedFormat(gl, gl.RGBA, gl.RGBA, halfFloatTexType);
+      }
+
+      return {
+        gl,
+        ext: {
+          formatRGBA,
+          formatRG,
+          formatR,
+          halfFloatTexType,
+          supportLinearFiltering,
+        },
+      };
+    }
+
+    function getSupportedFormat(gl, internalFormat, format, type) {
+      if (!supportRenderTextureFormat(gl, internalFormat, format, type)) {
+        switch (internalFormat) {
+          case gl.R16F:
+            return getSupportedFormat(gl, gl.RG16F, gl.RG, type);
+          case gl.RG16F:
+            return getSupportedFormat(gl, gl.RGBA16F, gl.RGBA, type);
+          default:
+            return null;
+        }
+      }
+
+      return {
+        internalFormat,
+        format,
+      };
+    }
+
+    function supportRenderTextureFormat(gl, internalFormat, format, type) {
+      let texture = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, 4, 4, 0, format, type, null);
+
+      let fbo = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+
+      let status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+      return status == gl.FRAMEBUFFER_COMPLETE;
+    }
+
+    class Material {
+      constructor(vertexShader, fragmentShaderSource) {
+        this.vertexShader = vertexShader;
+        this.fragmentShaderSource = fragmentShaderSource;
+        this.programs = [];
+        this.activeProgram = null;
+        this.uniforms = [];
+      }
+
+      setKeywords(keywords) {
+        let hash = 0;
+        for (let i = 0; i < keywords.length; i++) hash += hashCode(keywords[i]);
+
+        let program = this.programs[hash];
+        if (program == null) {
+          let fragmentShader = compileShader(gl.FRAGMENT_SHADER, this.fragmentShaderSource, keywords);
+          program = createProgram(this.vertexShader, fragmentShader);
+          this.programs[hash] = program;
+        }
+
+        if (program == this.activeProgram) return;
+
+        this.uniforms = getUniforms(program);
+        this.activeProgram = program;
+      }
+
+      bind() {
+        gl.useProgram(this.activeProgram);
+      }
+    }
+
+    class Program {
+      constructor(vertexShader, fragmentShader) {
+        this.uniforms = {};
+        this.program = createProgram(vertexShader, fragmentShader);
+        this.uniforms = getUniforms(this.program);
+      }
+
+      bind() {
+        gl.useProgram(this.program);
+      }
+    }
+
+    function createProgram(vertexShader, fragmentShader) {
+      let program = gl.createProgram();
+      gl.attachShader(program, vertexShader);
+      gl.attachShader(program, fragmentShader);
+      gl.linkProgram(program);
+
+      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) console.trace(gl.getProgramInfoLog(program));
+
+      return program;
+    }
+
+    function getUniforms(program) {
+      let uniforms = [];
+      let uniformCount = gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS);
+      for (let i = 0; i < uniformCount; i++) {
+        let uniformName = gl.getActiveUniform(program, i).name;
+        uniforms[uniformName] = gl.getUniformLocation(program, uniformName);
+      }
+      return uniforms;
+    }
+
+    function compileShader(type, source, keywords) {
+      source = addKeywords(source, keywords);
+
+      const shader = gl.createShader(type);
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) console.trace(gl.getShaderInfoLog(shader));
+
+      return shader;
+    }
+
+    function addKeywords(source, keywords) {
+      if (keywords == null) return source;
+      let keywordsString = '';
+      keywords.forEach((keyword) => {
+        keywordsString += '#define ' + keyword + '\n';
+      });
+
+      return keywordsString + source;
+    }
+
+    const baseVertexShader = compileShader(
+      gl.VERTEX_SHADER,
+      `
+    precision highp float;
+
+    attribute vec2 aPosition;
+    varying vec2 vUv;
+    varying vec2 vL;
+    varying vec2 vR;
+    varying vec2 vT;
+    varying vec2 vB;
+    uniform vec2 texelSize;
+
+    void main () {
+        vUv = aPosition * 0.5 + 0.5;
+        vL = vUv - vec2(texelSize.x, 0.0);
+        vR = vUv + vec2(texelSize.x, 0.0);
+        vT = vUv + vec2(0.0, texelSize.y);
+        vB = vUv - vec2(0.0, texelSize.y);
+        gl_Position = vec4(aPosition, 0.0, 1.0);
+    }
+`
+    );
+
+    const blurVertexShader = compileShader(
+      gl.VERTEX_SHADER,
+      `
+    precision highp float;
+
+    attribute vec2 aPosition;
+    varying vec2 vUv;
+    varying vec2 vL;
+    varying vec2 vR;
+    uniform vec2 texelSize;
+
+    void main () {
+        vUv = aPosition * 0.5 + 0.5;
+        float offset = 1.33333333;
+        vL = vUv - texelSize * offset;
+        vR = vUv + texelSize * offset;
+        gl_Position = vec4(aPosition, 0.0, 1.0);
+    }
+`
+    );
+
+    const blurShader = compileShader(
+      gl.FRAGMENT_SHADER,
+      `
+    precision mediump float;
+    precision mediump sampler2D;
+
+    varying vec2 vUv;
+    varying vec2 vL;
+    varying vec2 vR;
+    uniform sampler2D uTexture;
+
+    void main () {
+        vec4 sum = texture2D(uTexture, vUv) * 0.29411764;
+        sum += texture2D(uTexture, vL) * 0.35294117;
+        sum += texture2D(uTexture, vR) * 0.35294117;
+        gl_FragColor = sum;
+    }
+`
+    );
+
+    const copyShader = compileShader(
+      gl.FRAGMENT_SHADER,
+      `
+    precision mediump float;
+    precision mediump sampler2D;
+
+    varying highp vec2 vUv;
+    uniform sampler2D uTexture;
+
+    void main () {
+        gl_FragColor = texture2D(uTexture, vUv);
+    }
+`
+    );
+
+    const clearShader = compileShader(
+      gl.FRAGMENT_SHADER,
+      `
+    precision mediump float;
+    precision mediump sampler2D;
+
+    varying highp vec2 vUv;
+    uniform sampler2D uTexture;
+    uniform float value;
+
+    void main () {
+        gl_FragColor = value * texture2D(uTexture, vUv);
+    }
+`
+    );
+
+    const colorShader = compileShader(
+      gl.FRAGMENT_SHADER,
+      `
+    precision mediump float;
+
+    uniform vec4 color;
+
+    void main () {
+        gl_FragColor = color;
+    }
+`
+    );
+
+    const displayShaderSource = `
+    precision highp float;
+    precision highp sampler2D;
+
+    varying vec2 vUv;
+    varying vec2 vL;
+    varying vec2 vR;
+    varying vec2 vT;
+    varying vec2 vB;
+    uniform sampler2D uTexture;
+    uniform sampler2D uDithering;
+    uniform vec2 ditherScale;
+    uniform vec2 texelSize;
+
+    vec3 linearToGamma (vec3 color) {
+        color = max(color, vec3(0));
+        return max(1.055 * pow(color, vec3(0.416666667)) - 0.055, vec3(0));
+    }
+
+    void main () {
+        vec3 c = texture2D(uTexture, vUv).rgb;
+
+    #ifdef SHADING
+        vec3 lc = texture2D(uTexture, vL).rgb;
+        vec3 rc = texture2D(uTexture, vR).rgb;
+        vec3 tc = texture2D(uTexture, vT).rgb;
+        vec3 bc = texture2D(uTexture, vB).rgb;
+
+        float dx = length(rc) - length(lc);
+        float dy = length(tc) - length(bc);
+
+        vec3 n = normalize(vec3(dx, dy, length(texelSize)));
+        vec3 l = vec3(0.0, 0.0, 1.0);
+
+        float diffuse = clamp(dot(n, l) + 0.7, 0.7, 1.0);
+        c *= diffuse;
+    #endif
+
+        float a = max(c.r, max(c.g, c.b));
+        gl_FragColor = vec4(c, a);
+    }
+`;
+
+    const splatShader = compileShader(
+      gl.FRAGMENT_SHADER,
+      `
+    precision highp float;
+    precision highp sampler2D;
+
+    varying vec2 vUv;
+    uniform sampler2D uTarget;
+    uniform float aspectRatio;
+    uniform vec3 color;
+    uniform vec2 point;
+    uniform float radius;
+
+    void main () {
+        vec2 p = vUv - point.xy;
+        p.x *= aspectRatio;
+        vec3 splat = exp(-dot(p, p) / radius) * color;
+        vec3 base = texture2D(uTarget, vUv).xyz;
+        gl_FragColor = vec4(base + splat, 1.0);
+    }
+`
+    );
+
+    const advectionShader = compileShader(
+      gl.FRAGMENT_SHADER,
+      `
+    precision highp float;
+    precision highp sampler2D;
+
+    varying vec2 vUv;
+    uniform sampler2D uVelocity;
+    uniform sampler2D uSource;
+    uniform vec2 texelSize;
+    uniform vec2 dyeTexelSize;
+    uniform float dt;
+    uniform float dissipation;
+
+    vec4 bilerp (sampler2D sam, vec2 uv, vec2 tsize) {
+        vec2 st = uv / tsize - 0.5;
+
+        vec2 iuv = floor(st);
+        vec2 fuv = fract(st);
+
+        vec4 a = texture2D(sam, (iuv + vec2(0.5, 0.5)) * tsize);
+        vec4 b = texture2D(sam, (iuv + vec2(1.5, 0.5)) * tsize);
+        vec4 c = texture2D(sam, (iuv + vec2(0.5, 1.5)) * tsize);
+        vec4 d = texture2D(sam, (iuv + vec2(1.5, 1.5)) * tsize);
+
+        return mix(mix(a, b, fuv.x), mix(c, d, fuv.x), fuv.y);
+    }
+
+    void main () {
+    #ifdef MANUAL_FILTERING
+        vec2 coord = vUv - dt * bilerp(uVelocity, vUv, texelSize).xy * texelSize;
+        vec4 result = bilerp(uSource, coord, dyeTexelSize);
+    #else
+        vec2 coord = vUv - dt * texture2D(uVelocity, vUv).xy * texelSize;
+        vec4 result = texture2D(uSource, coord);
+    #endif
+        float decay = 1.0 + dissipation * dt;
+        gl_FragColor = result / decay;
+    }`,
+      ext.supportLinearFiltering ? null : ['MANUAL_FILTERING']
+    );
+
+    const divergenceShader = compileShader(
+      gl.FRAGMENT_SHADER,
+      `
+    precision mediump float;
+    precision mediump sampler2D;
+
+    varying highp vec2 vUv;
+    varying highp vec2 vL;
+    varying highp vec2 vR;
+    varying highp vec2 vT;
+    varying highp vec2 vB;
+    uniform sampler2D uVelocity;
+
+    void main () {
+        float L = texture2D(uVelocity, vL).x;
+        float R = texture2D(uVelocity, vR).x;
+        float T = texture2D(uVelocity, vT).y;
+        float B = texture2D(uVelocity, vB).y;
+
+        vec2 C = texture2D(uVelocity, vUv).xy;
+        if (vL.x < 0.0) { L = -C.x; }
+        if (vR.x > 1.0) { R = -C.x; }
+        if (vT.y > 1.0) { T = -C.y; }
+        if (vB.y < 0.0) { B = -C.y; }
+
+        float div = 0.5 * (R - L + T - B);
+        gl_FragColor = vec4(div, 0.0, 0.0, 1.0);
+    }
+`
+    );
+
+    const curlShader = compileShader(
+      gl.FRAGMENT_SHADER,
+      `
+    precision mediump float;
+    precision mediump sampler2D;
+
+    varying highp vec2 vUv;
+    varying highp vec2 vL;
+    varying highp vec2 vR;
+    varying highp vec2 vT;
+    varying highp vec2 vB;
+    uniform sampler2D uVelocity;
+
+    void main () {
+        float L = texture2D(uVelocity, vL).y;
+        float R = texture2D(uVelocity, vR).y;
+        float T = texture2D(uVelocity, vT).x;
+        float B = texture2D(uVelocity, vB).x;
+        float vorticity = R - L - T + B;
+        gl_FragColor = vec4(0.5 * vorticity, 0.0, 0.0, 1.0);
+    }
+`
+    );
+
+    const vorticityShader = compileShader(
+      gl.FRAGMENT_SHADER,
+      `
+    precision highp float;
+    precision highp sampler2D;
+
+    varying vec2 vUv;
+    varying vec2 vL;
+    varying vec2 vR;
+    varying vec2 vT;
+    varying vec2 vB;
+    uniform sampler2D uVelocity;
+    uniform sampler2D uCurl;
+    uniform float curl;
+    uniform float dt;
+
+    void main () {
+        float L = texture2D(uCurl, vL).x;
+        float R = texture2D(uCurl, vR).x;
+        float T = texture2D(uCurl, vT).x;
+        float B = texture2D(uCurl, vB).x;
+        float C = texture2D(uCurl, vUv).x;
+
+        vec2 force = 0.5 * vec2(abs(T) - abs(B), abs(R) - abs(L));
+        force /= length(force) + 0.0001;
+        force *= curl * C;
+        force.y *= -1.0;
+
+        vec2 velocity = texture2D(uVelocity, vUv).xy;
+        velocity += force * dt;
+        velocity = min(max(velocity, -1000.0), 1000.0);
+        gl_FragColor = vec4(velocity, 0.0, 1.0);
+    }
+`
+    );
+
+    const pressureShader = compileShader(
+      gl.FRAGMENT_SHADER,
+      `
+    precision mediump float;
+    precision mediump sampler2D;
+
+    varying highp vec2 vUv;
+    varying highp vec2 vL;
+    varying highp vec2 vR;
+    varying highp vec2 vT;
+    varying highp vec2 vB;
+    uniform sampler2D uPressure;
+    uniform sampler2D uDivergence;
+
+    void main () {
+        float L = texture2D(uPressure, vL).x;
+        float R = texture2D(uPressure, vR).x;
+        float T = texture2D(uPressure, vT).x;
+        float B = texture2D(uPressure, vB).x;
+        float C = texture2D(uPressure, vUv).x;
+        float divergence = texture2D(uDivergence, vUv).x;
+        float pressure = (L + R + B + T - divergence) * 0.25;
+        gl_FragColor = vec4(pressure, 0.0, 0.0, 1.0);
+    }
+`
+    );
+
+    const gradientSubtractShader = compileShader(
+      gl.FRAGMENT_SHADER,
+      `
+    precision mediump float;
+    precision mediump sampler2D;
+
+    varying highp vec2 vUv;
+    varying highp vec2 vL;
+    varying highp vec2 vR;
+    varying highp vec2 vT;
+    varying highp vec2 vB;
+    uniform sampler2D uPressure;
+    uniform sampler2D uVelocity;
+
+    void main () {
+        float L = texture2D(uPressure, vL).x;
+        float R = texture2D(uPressure, vR).x;
+        float T = texture2D(uPressure, vT).x;
+        float B = texture2D(uPressure, vB).x;
+        vec2 velocity = texture2D(uVelocity, vUv).xy;
+        velocity.xy -= vec2(R - L, T - B);
+        gl_FragColor = vec4(velocity, 0.0, 1.0);
+    }
+`
+    );
+
+    const blit = (() => {
+      gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, -1, 1, 1, 1, 1, -1]), gl.STATIC_DRAW);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, gl.createBuffer());
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array([0, 1, 2, 0, 2, 3]), gl.STATIC_DRAW);
+      gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+      gl.enableVertexAttribArray(0);
+
+      return (target, clear = false) => {
+        if (target == null) {
+          gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+          gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        } else {
+          gl.viewport(0, 0, target.width, target.height);
+          gl.bindFramebuffer(gl.FRAMEBUFFER, target.fbo);
+        }
+        if (clear) {
+          gl.clearColor(0.0, 0.0, 0.0, 1.0);
+          gl.clear(gl.COLOR_BUFFER_BIT);
+        }
+        // CHECK_FRAMEBUFFER_STATUS();
+        gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+      };
+    })();
+
+    function CHECK_FRAMEBUFFER_STATUS() {
+      let status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+      if (status != gl.FRAMEBUFFER_COMPLETE) console.trace('Framebuffer error: ' + status);
+    }
+
+    let dye;
+    let velocity;
+    let divergence;
+    let curl;
+    let pressure;
+    
+    const copyProgram = new Program(baseVertexShader, copyShader);
+    const clearProgram = new Program(baseVertexShader, clearShader);
+    const splatProgram = new Program(baseVertexShader, splatShader);
+    const advectionProgram = new Program(baseVertexShader, advectionShader);
+    const divergenceProgram = new Program(baseVertexShader, divergenceShader);
+    const curlProgram = new Program(baseVertexShader, curlShader);
+    const vorticityProgram = new Program(baseVertexShader, vorticityShader);
+    const pressureProgram = new Program(baseVertexShader, pressureShader);
+    const gradienSubtractProgram = new Program(baseVertexShader, gradientSubtractShader);
+
+    const displayMaterial = new Material(baseVertexShader, displayShaderSource);
+
+    function initFramebuffers() {
+      let simRes = getResolution(config.SIM_RESOLUTION);
+      let dyeRes = getResolution(config.DYE_RESOLUTION);
+
+      const texType = ext.halfFloatTexType;
+      const rgba = ext.formatRGBA;
+      const rg = ext.formatRG;
+      const r = ext.formatR;
+      const filtering = ext.supportLinearFiltering ? gl.LINEAR : gl.NEAREST;
+
+      gl.disable(gl.BLEND);
+
+      if (dye == null)
+        dye = createDoubleFBO(dyeRes.width, dyeRes.height, rgba.internalFormat, rgba.format, texType, filtering);
+      else
+        dye = resizeDoubleFBO(dye, dyeRes.width, dyeRes.height, rgba.internalFormat, rgba.format, texType, filtering);
+
+      if (velocity == null)
+        velocity = createDoubleFBO(simRes.width, simRes.height, rg.internalFormat, rg.format, texType, filtering);
+      else
+        velocity = resizeDoubleFBO(
+          velocity,
+          simRes.width,
+          simRes.height,
+          rg.internalFormat,
+          rg.format,
+          texType,
+          filtering
+        );
+
+      divergence = createFBO(simRes.width, simRes.height, r.internalFormat, r.format, texType, gl.NEAREST);
+      curl = createFBO(simRes.width, simRes.height, r.internalFormat, r.format, texType, gl.NEAREST);
+      pressure = createDoubleFBO(simRes.width, simRes.height, r.internalFormat, r.format, texType, gl.NEAREST);
+    }
+
+    function createFBO(w, h, internalFormat, format, type, param) {
+      gl.activeTexture(gl.TEXTURE0);
+      let texture = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, param);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, param);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, w, h, 0, format, type, null);
+
+      let fbo = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+      gl.viewport(0, 0, w, h);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+
+      let texelSizeX = 1.0 / w;
+      let texelSizeY = 1.0 / h;
+
+      return {
+        texture,
+        fbo,
+        width: w,
+        height: h,
+        texelSizeX,
+        texelSizeY,
+        attach(id) {
+          gl.activeTexture(gl.TEXTURE0 + id);
+          gl.bindTexture(gl.TEXTURE_2D, texture);
+          return id;
+        },
+      };
+    }
+
+    function createDoubleFBO(w, h, internalFormat, format, type, param) {
+      let fbo1 = createFBO(w, h, internalFormat, format, type, param);
+      let fbo2 = createFBO(w, h, internalFormat, format, type, param);
+
+      return {
+        width: w,
+        height: h,
+        texelSizeX: fbo1.texelSizeX,
+        texelSizeY: fbo1.texelSizeY,
+        get read() {
+          return fbo1;
+        },
+        set read(value) {
+          fbo1 = value;
+        },
+        get write() {
+          return fbo2;
+        },
+        set write(value) {
+          fbo2 = value;
+        },
+        swap() {
+          let temp = fbo1;
+          fbo1 = fbo2;
+          fbo2 = temp;
+        },
+      };
+    }
+
+    function resizeFBO(target, w, h, internalFormat, format, type, param) {
+      let newFBO = createFBO(w, h, internalFormat, format, type, param);
+      copyProgram.bind();
+      gl.uniform1i(copyProgram.uniforms.uTexture, target.attach(0));
+      blit(newFBO);
+      return newFBO;
+    }
+
+    function resizeDoubleFBO(target, w, h, internalFormat, format, type, param) {
+      if (target.width == w && target.height == h) return target;
+      target.read = resizeFBO(target.read, w, h, internalFormat, format, type, param);
+      target.write = createFBO(w, h, internalFormat, format, type, param);
+      target.width = w;
+      target.height = h;
+      target.texelSizeX = 1.0 / w;
+      target.texelSizeY = 1.0 / h;
+      return target;
+    }
+
+    function createTextureAsync(url) {
+      let texture = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, 1, 1, 0, gl.RGB, gl.UNSIGNED_BYTE, new Uint8Array([255, 255, 255]));
+
+      let obj = {
+        texture,
+        width: 1,
+        height: 1,
+        attach(id) {
+          gl.activeTexture(gl.TEXTURE0 + id);
+          gl.bindTexture(gl.TEXTURE_2D, texture);
+          return id;
+        },
+      };
+
+      let image = new Image();
+      image.onload = () => {
+        obj.width = image.width;
+        obj.height = image.height;
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, image);
+      };
+      image.src = url;
+
+      return obj;
+    }
+
+    function updateKeywords() {
+      let displayKeywords = [];
+      if (config.SHADING) displayKeywords.push('SHADING');
+      displayMaterial.setKeywords(displayKeywords);
+    }
+
+    updateKeywords();
+    initFramebuffers();
+
+    let lastUpdateTime = Date.now();
+    let colorUpdateTimer = 0.0;
+
+    function update() {
+      const dt = calcDeltaTime();
+      if (resizeCanvas()) initFramebuffers();
+      updateColors(dt);
+      applyInputs();
+      step(dt);
+      render(null);
+      requestAnimationFrame(update);
+    }
+
+    function calcDeltaTime() {
+      let now = Date.now();
+      let dt = (now - lastUpdateTime) / 1000;
+      dt = Math.min(dt, 0.016666);
+      lastUpdateTime = now;
+      return dt;
+    }
+
+    function resizeCanvas() {
+      let width = scaleByPixelRatio(canvas.clientWidth);
+      let height = scaleByPixelRatio(canvas.clientHeight);
+      if (canvas.width != width || canvas.height != height) {
+        canvas.width = width;
+        canvas.height = height;
+        return true;
+      }
+      return false;
+    }
+
+    function updateColors(dt) {
+      colorUpdateTimer += dt * config.COLOR_UPDATE_SPEED;
+      if (colorUpdateTimer >= 1) {
+        colorUpdateTimer = wrap(colorUpdateTimer, 0, 1);
+        pointers.forEach((p) => {
+          p.color = generateColor();
+        });
+      }
+    }
+
+    function applyInputs() {
+      pointers.forEach((p) => {
+        if (p.moved) {
+          p.moved = false;
+          splatPointer(p);
+        }
+      });
+    }
+
+    function step(dt) {
+      gl.disable(gl.BLEND);
+
+      curlProgram.bind();
+      gl.uniform2f(curlProgram.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
+      gl.uniform1i(curlProgram.uniforms.uVelocity, velocity.read.attach(0));
+      blit(curl);
+
+      vorticityProgram.bind();
+      gl.uniform2f(vorticityProgram.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
+      gl.uniform1i(vorticityProgram.uniforms.uVelocity, velocity.read.attach(0));
+      gl.uniform1i(vorticityProgram.uniforms.uCurl, curl.attach(1));
+      gl.uniform1f(vorticityProgram.uniforms.curl, config.CURL);
+      gl.uniform1f(vorticityProgram.uniforms.dt, dt);
+      blit(velocity.write);
+      velocity.swap();
+
+      divergenceProgram.bind();
+      gl.uniform2f(divergenceProgram.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
+      gl.uniform1i(divergenceProgram.uniforms.uVelocity, velocity.read.attach(0));
+      blit(divergence);
+
+      clearProgram.bind();
+      gl.uniform1i(clearProgram.uniforms.uTexture, pressure.read.attach(0));
+      gl.uniform1f(clearProgram.uniforms.value, config.PRESSURE);
+      blit(pressure.write);
+      pressure.swap();
+
+      pressureProgram.bind();
+      gl.uniform2f(pressureProgram.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
+      gl.uniform1i(pressureProgram.uniforms.uDivergence, divergence.attach(0));
+      for (let i = 0; i < config.PRESSURE_ITERATIONS; i++) {
+        gl.uniform1i(pressureProgram.uniforms.uPressure, pressure.read.attach(1));
+        blit(pressure.write);
+        pressure.swap();
+      }
+
+      gradienSubtractProgram.bind();
+      gl.uniform2f(gradienSubtractProgram.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
+      gl.uniform1i(gradienSubtractProgram.uniforms.uPressure, pressure.read.attach(0));
+      gl.uniform1i(gradienSubtractProgram.uniforms.uVelocity, velocity.read.attach(1));
+      blit(velocity.write);
+      velocity.swap();
+
+      advectionProgram.bind();
+      gl.uniform2f(advectionProgram.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
+      if (!ext.supportLinearFiltering)
+        gl.uniform2f(advectionProgram.uniforms.dyeTexelSize, velocity.texelSizeX, velocity.texelSizeY);
+      let velocityId = velocity.read.attach(0);
+      gl.uniform1i(advectionProgram.uniforms.uVelocity, velocityId);
+      gl.uniform1i(advectionProgram.uniforms.uSource, velocityId);
+      gl.uniform1f(advectionProgram.uniforms.dt, dt);
+      gl.uniform1f(advectionProgram.uniforms.dissipation, config.VELOCITY_DISSIPATION);
+      blit(velocity.write);
+      velocity.swap();
+
+      if (!ext.supportLinearFiltering)
+        gl.uniform2f(advectionProgram.uniforms.dyeTexelSize, dye.texelSizeX, dye.texelSizeY);
+      gl.uniform1i(advectionProgram.uniforms.uVelocity, velocity.read.attach(0));
+      gl.uniform1i(advectionProgram.uniforms.uSource, dye.read.attach(1));
+      gl.uniform1f(advectionProgram.uniforms.dissipation, config.DENSITY_DISSIPATION);
+      blit(dye.write);
+      dye.swap();
+    }
+
+    function render(target) {
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      gl.enable(gl.BLEND);
+      drawDisplay(target);
+    }
+
+    function drawDisplay(target) {
+      let width = target == null ? gl.drawingBufferWidth : target.width;
+      let height = target == null ? gl.drawingBufferHeight : target.height;
+
+      displayMaterial.bind();
+      if (config.SHADING) gl.uniform2f(displayMaterial.uniforms.texelSize, 1.0 / width, 1.0 / height);
+      gl.uniform1i(displayMaterial.uniforms.uTexture, dye.read.attach(0));
+      blit(target);
+    }
+
+    function splatPointer(pointer) {
+      let dx = pointer.deltaX * config.SPLAT_FORCE;
+      let dy = pointer.deltaY * config.SPLAT_FORCE;
+      splat(pointer.texcoordX, pointer.texcoordY, dx, dy, pointer.color);
+    }
+
+    function clickSplat(pointer) {
+      const color = generateColor();
+      color.r *= 10;
+      color.g *= 10;
+      color.b *= 10;
+      let dx = 10 * (Math.random() - 0.5);
+      let dy = 30 * (Math.random() - 0.5);
+      splat(pointer.texcoordX, pointer.texcoordY, dx, dy, color);
+    }
+
+    function splat(x, y, dx, dy, color) {
+      splatProgram.bind();
+      gl.uniform1i(splatProgram.uniforms.uTarget, velocity.read.attach(0));
+      gl.uniform1f(splatProgram.uniforms.aspectRatio, canvas.width / canvas.height);
+      gl.uniform2f(splatProgram.uniforms.point, x, y);
+      gl.uniform3f(splatProgram.uniforms.color, dx, dy, 0.0);
+      gl.uniform1f(splatProgram.uniforms.radius, correctRadius(config.SPLAT_RADIUS / 100.0));
+      blit(velocity.write);
+      velocity.swap();
+
+      gl.uniform1i(splatProgram.uniforms.uTarget, dye.read.attach(0));
+      gl.uniform3f(splatProgram.uniforms.color, color.r, color.g, color.b);
+      blit(dye.write);
+      dye.swap();
+    }
+
+    function correctRadius(radius) {
+      let aspectRatio = canvas.width / canvas.height;
+      if (aspectRatio > 1) radius *= aspectRatio;
+      return radius;
+    }
+
+    window.addEventListener('mousedown', (e) => {
+      let pointer = pointers[0];
+      let posX = scaleByPixelRatio(e.clientX);
+      let posY = scaleByPixelRatio(e.clientY);
+      updatePointerDownData(pointer, -1, posX, posY);
+      clickSplat(pointer);
+    });
+
+    document.body.addEventListener(
+      'mousemove',
+      function (e) {
+        let pointer = pointers[0];
+        let posX = scaleByPixelRatio(e.clientX);
+        let posY = scaleByPixelRatio(e.clientY);
+        let color = generateColor();
+        update();
+        updatePointerMoveData(pointer, posX, posY, color);
+      },
+      { once: true }
+    );
+
+    window.addEventListener('mousemove', (e) => {
+      let pointer = pointers[0];
+      let posX = scaleByPixelRatio(e.clientX);
+      let posY = scaleByPixelRatio(e.clientY);
+      let color = pointer.color;
+      updatePointerMoveData(pointer, posX, posY, color);
+    });
+
+    document.body.addEventListener(
+      'touchstart',
+      (e) => {
+        const touches = e.targetTouches;
+        let touch = touches[0];
+        let pointer = pointers[0];
+        for (let i = 0; i < touches.length; i++) {
+          let posX = scaleByPixelRatio(touches[i].clientX);
+          let posY = scaleByPixelRatio(touches[i].clientY);
+          update();
+          updatePointerDownData(pointer, touches[i].identifier, posX, posY);
+        }
+      },
+      { once: true }
+    );
+
+    window.addEventListener('touchstart', (e) => {
+      const touches = e.targetTouches;
+      let pointer = pointers[0];
+      for (let i = 0; i < touches.length; i++) {
+        let posX = scaleByPixelRatio(touches[i].clientX);
+        let posY = scaleByPixelRatio(touches[i].clientY);
+        updatePointerDownData(pointer, touches[i].identifier, posX, posY);
+      }
+    });
+
+    window.addEventListener(
+      'touchmove',
+      (e) => {
+        const touches = e.targetTouches;
+        let pointer = pointers[0];
+        for (let i = 0; i < touches.length; i++) {
+          let posX = scaleByPixelRatio(touches[i].clientX);
+          let posY = scaleByPixelRatio(touches[i].clientY);
+          updatePointerMoveData(pointer, posX, posY, pointer.color);
+        }
+      },
+      false
+    );
+
+    window.addEventListener('touchend', (e) => {
+      const touches = e.changedTouches;
+      let pointer = pointers[0];
+
+      for (let i = 0; i < touches.length; i++) {
+        updatePointerUpData(pointer);
+      }
+    });
+
+    function updatePointerDownData(pointer, id, posX, posY) {
+      pointer.id = id;
+      pointer.down = true;
+      pointer.moved = false;
+      pointer.texcoordX = posX / canvas.width;
+      pointer.texcoordY = 1.0 - posY / canvas.height;
+      pointer.prevTexcoordX = pointer.texcoordX;
+      pointer.prevTexcoordY = pointer.texcoordY;
+      pointer.deltaX = 0;
+      pointer.deltaY = 0;
+      pointer.color = generateColor();
+    }
+
+    function updatePointerMoveData(pointer, posX, posY, color) {
+      // pointer.down = false;
+      pointer.prevTexcoordX = pointer.texcoordX;
+      pointer.prevTexcoordY = pointer.texcoordY;
+      pointer.texcoordX = posX / canvas.width;
+      pointer.texcoordY = 1.0 - posY / canvas.height;
+      pointer.deltaX = correctDeltaX(pointer.texcoordX - pointer.prevTexcoordX);
+      pointer.deltaY = correctDeltaY(pointer.texcoordY - pointer.prevTexcoordY);
+      pointer.moved = Math.abs(pointer.deltaX) > 0 || Math.abs(pointer.deltaY) > 0;
+      pointer.color = color;
+    }
+
+    function updatePointerUpData(pointer) {
+      pointer.down = false;
+    }
+
+    function correctDeltaX(delta) {
+      let aspectRatio = canvas.width / canvas.height;
+      if (aspectRatio < 1) delta *= aspectRatio;
+      return delta;
+    }
+
+    function correctDeltaY(delta) {
+      let aspectRatio = canvas.width / canvas.height;
+      if (aspectRatio > 1) delta /= aspectRatio;
+      return delta;
+    }
+
+    function generateColor() {
+      let c = HSVtoRGB(0.5, 1, 0.8);
+      c.r *= 0.15;
+      c.g *= 0.15;
+      c.b *= 0.15;
+      return c;
+    }
+
+    function HSVtoRGB(h, s, v) {
+      let r, g, b, i, f, p, q, t;
+      i = Math.floor(h * 6);
+      f = h * 6 - i;
+      p = v * (1 - s);
+      q = v * (1 - f * s);
+      t = v * (1 - (1 - f) * s);
+
+      switch (i % 6) {
+        case 0:
+          (r = v), (g = t), (b = p);
+          break;
+        case 1:
+          (r = q), (g = v), (b = p);
+          break;
+        case 2:
+          (r = p), (g = v), (b = t);
+          break;
+        case 3:
+          (r = p), (g = q), (b = v);
+          break;
+        case 4:
+          (r = t), (g = p), (b = v);
+          break;
+        case 5:
+          (r = v), (g = p), (b = q);
+          break;
+      }
+
+      return {
+        r,
+        g,
+        b,
+      };
+    }
+
+    function wrap(value, min, max) {
+      let range = max - min;
+      if (range == 0) return min;
+      return ((value - min) % range) + min;
+    }
+
+    function getResolution(resolution) {
+      let aspectRatio = gl.drawingBufferWidth / gl.drawingBufferHeight;
+      if (aspectRatio < 1) aspectRatio = 1.0 / aspectRatio;
+
+      let min = Math.round(resolution);
+      let max = Math.round(resolution * aspectRatio);
+
+      if (gl.drawingBufferWidth > gl.drawingBufferHeight) return { width: max, height: min };
+      else return { width: min, height: max };
+    }
+
+    function scaleByPixelRatio(input) {
+      let pixelRatio = window.devicePixelRatio || 1;
+      return Math.floor(input * pixelRatio);
+    }
+
+    function hashCode(s) {
+      if (s.length == 0) return 0;
+      let hash = 0;
+      for (let i = 0; i < s.length; i++) {
+        hash = (hash << 5) - hash + s.charCodeAt(i);
+        hash |= 0; // Convert to 32bit integer
+      }
+      return hash;
+    }
+  };
+</script>  <div class="w-full" data-astro-cid-d6vcou2g> <nav id="main-nav" class="fixed z-[100] bg-[var(--background)] border border-1 border-transparent backdrop-blur-xl transition-all duration-500 ease-in-out md:left-6 md:top-1/2 md:-translate-y-1/2 md:flex-col md:h-max bottom-0 left-1/2 -translate-x-1/2 md:translate-x-0 w-full md:w-auto" data-astro-cid-d6vcou2g> <div class="container mx-auto flex justify-center items-center p-3 md:p-4 md:flex-col" data-astro-cid-d6vcou2g> <ul class="flex w-full justify-between md:flex-col md:space-x-0 md:space-y-8 md:justify-start gap-6" data-astro-cid-d6vcou2g> <li class="flex-1 md:flex-none" data-astro-cid-d6vcou2g> <a href="#home" class="flex flex-col md:flex-row items-center gap-1 text-[var(--white-icon)] transition-colors text-xs md:text-base relative group" data-astro-cid-d6vcou2g> <div class="absolute md:-left-4 md:top-1/2 md:-translate-y-1/2 md:w-2 md:h-2 md:rounded-full transition-all duration-300 scale-0 opacity-0 " data-astro-cid-d6vcou2g></div> <span class="flex items-center justify-center w-6 h-6" data-astro-cid-d6vcou2g> <fragment data-astro-cid-d6vcou2g><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-home"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></fragment> </span> <span class="md:hidden" data-astro-cid-d6vcou2g>Home</span> </a> </li><li class="flex-1 md:flex-none" data-astro-cid-d6vcou2g> <a href="#projects" class="flex flex-col md:flex-row items-center gap-1 text-[var(--white-icon)] transition-colors text-xs md:text-base relative group" data-astro-cid-d6vcou2g> <div class="absolute md:-left-4 md:top-1/2 md:-translate-y-1/2 md:w-2 md:h-2 md:rounded-full transition-all duration-300 scale-0 opacity-0 " data-astro-cid-d6vcou2g></div> <span class="flex items-center justify-center w-6 h-6" data-astro-cid-d6vcou2g> <fragment data-astro-cid-d6vcou2g><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-briefcase"><rect width="20" height="14" x="2" y="7" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v16"/></svg></fragment> </span> <span class="md:hidden" data-astro-cid-d6vcou2g>Projects</span> </a> </li><li class="flex-1 md:flex-none" data-astro-cid-d6vcou2g> <a href="#contact" class="flex flex-col md:flex-row items-center gap-1 text-[var(--white-icon)] transition-colors text-xs md:text-base relative group" data-astro-cid-d6vcou2g> <div class="absolute md:-left-4 md:top-1/2 md:-translate-y-1/2 md:w-2 md:h-2 md:rounded-full transition-all duration-300 scale-0 opacity-0 " data-astro-cid-d6vcou2g></div> <span class="flex items-center justify-center w-6 h-6" data-astro-cid-d6vcou2g> <fragment data-astro-cid-d6vcou2g><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-mail"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg></fragment> </span> <span class="md:hidden" data-astro-cid-d6vcou2g>Contact</span> </a> </li> </ul> </div> </nav> </div>  <script type="module">const l=document.getElementById("main-nav");let s=null;function v(){window.scrollY>0?l?.classList.add("scrolling"):l?.classList.remove("scrolling"),s=null}window.addEventListener("scroll",()=>{s||(s=requestAnimationFrame(v))},{passive:!0});document.querySelectorAll('a[href^="#"]').forEach(n=>{n.addEventListener("click",function(e){e.preventDefault();const r=e.currentTarget.getAttribute("href")?.substring(1)||"",t=document.getElementById(r);t&&t.scrollIntoView({behavior:"smooth"})})});document.addEventListener("DOMContentLoaded",()=>{const n=document.querySelectorAll("section[id]"),e=document.querySelectorAll("nav a[href^='#']"),c={threshold:.6},r=o=>{o.forEach(a=>{if(a.isIntersecting){e.forEach(u=>u.classList.remove("active"));const d=a.target.getAttribute("id"),i=document.querySelector(`nav a[href="#${d}"]`);i&&i.classList.add("active")}})},t=new IntersectionObserver(r,c);n.forEach(o=>t.observe(o))});</script> <br> <section class="text-[var(--white)] mt-12 md:mt-0" id="home"> <div class="max-w-5xl mx-auto space-y-8 md:py-36 pb-14"> <div class="text-left space-y-4"> <p class="text-md md:text-lg text-[var(--white-icon)] shiny-white">
+Hi, I'm Varshith Pawar H R
+</p> <div class="flex flex-col lg:flex-row lg:items-center space-y-4 lg:space-y-0 lg:space-x-8 md:gap-4"> <h1 class="text-[var(--white)] text-5xl md:text-6xl font-medium text-pretty leading-none">
+Engineering <br> Student
+</h1> <p class="text-md md:text-2xl text-[var(--white-icon)]">
+Transforming ideas into interactive and seamless digital experiences  
+  through <span class="text-[var(--sec)] shiny-sec">full-stack</span> development — blending intuitive UIs with powerful backend logic,  
+  and applying <span class="text-[var(--sec)] shiny-sec">machine learning</span> to real-world problems.
+</p> <br> </div> <div class="flex justify-start gap-2 pt-3 md:pt-6"> <a target="_blank" href="https://github.com/VarshithPawarHR" aria-label="GitHub" class="text-[var(--white-icon)] hover:text-white transition duration-300 ease-in-out border border-1 border-[var(--white-icon-tr)] p-3 rounded-xl bg-[#1414149c] hover:bg-[var(--white-icon-tr)]"> <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-8"> <path d="M12.001 2C6.47598 2 2.00098 6.475 2.00098 12C2.00098 16.425 4.86348 20.1625 8.83848 21.4875C9.33848 21.575 9.52598 21.275 9.52598 21.0125C9.52598 20.775 9.51348 19.9875 9.51348 19.15C7.00098 19.6125 6.35098 18.5375 6.15098 17.975C6.03848 17.6875 5.55098 16.8 5.12598 16.5625C4.77598 16.375 4.27598 15.9125 5.11348 15.9C5.90098 15.8875 6.46348 16.625 6.65098 16.925C7.55098 18.4375 8.98848 18.0125 9.56348 17.75C9.65098 17.1 9.91348 16.6625 10.201 16.4125C7.97598 16.1625 5.65098 15.3 5.65098 11.475C5.65098 10.3875 6.03848 9.4875 6.67598 8.7875C6.57598 8.5375 6.22598 7.5125 6.77598 6.1375C6.77598 6.1375 7.61348 5.875 9.52598 7.1625C10.326 6.9375 11.176 6.825 12.026 6.825C12.876 6.825 13.726 6.9375 14.526 7.1625C16.4385 5.8625 17.276 6.1375 17.276 6.1375C17.826 7.5125 17.476 8.5375 17.376 8.7875C18.0135 9.4875 18.401 10.375 18.401 11.475C18.401 15.3125 16.0635 16.1625 13.8385 16.4125C14.201 16.725 14.5135 17.325 14.5135 18.2625C14.5135 19.6 14.501 20.675 14.501 21.0125C14.501 21.275 14.6885 21.5875 15.1885 21.4875C19.259 20.1133 21.9999 16.2963 22.001 12C22.001 6.475 17.526 2 12.001 2Z"></path> </svg> </a> <a target="_blank" href="https://www.linkedin.com/in/varshithpawarhr" aria-label="LinkedIn" class="text-[var(--white-icon)] hover:text-white transition duration-300 ease-in-out border border-1 border-[var(--white-icon-tr)] p-3 rounded-xl bg-[#1414149c] hover:bg-[var(--white-icon-tr)]"> <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-8"> <path d="M18.3362 18.339H15.6707V14.1622C15.6707 13.1662 15.6505 11.8845 14.2817 11.8845C12.892 11.8845 12.6797 12.9683 12.6797 14.0887V18.339H10.0142V9.75H12.5747V10.9207H12.6092C12.967 10.2457 13.837 9.53325 15.1367 9.53325C17.8375 9.53325 18.337 11.3108 18.337 13.6245V18.339H18.3362ZM7.00373 8.57475C6.14573 8.57475 5.45648 7.88025 5.45648 7.026C5.45648 6.1725 6.14648 5.47875 7.00373 5.47875C7.85873 5.47875 8.55173 6.1725 8.55173 7.026C8.55173 7.88025 7.85798 8.57475 7.00373 8.57475ZM8.34023 18.339H5.66723V9.75H8.34023V18.339ZM19.6697 3H4.32923C3.59498 3 3.00098 3.5805 3.00098 4.29675V19.7033C3.00098 20.4202 3.59498 21 4.32923 21H19.6675C20.401 21 21.001 20.4202 21.001 19.7033V4.29675C21.001 3.5805 20.401 3 19.6675 3H19.6697Z"></path> </svg> </a> <a target="_blank" href="https://mail.google.com/mail/?view=cm&fs=1&to=varshithpawarhr@gmail.com.com&su=Hey%20Varshith!" aria-label="Email" class="text-[var(--white-icon)] hover:text-white transition duration-300 ease-in-out border border-1 border-[var(--white-icon-tr)] p-3 rounded-xl bg-[#1414149c] hover:bg-[var(--white-icon-tr)]"> <svg xmlns="http://www.w3.org/2000/svg" width="2.1em" height="2.1em" viewBox="0 0 24 24"> <path fill="currentColor" d="m18.73 5.41l-1.28 1L12 10.46L6.55 6.37l-1.28-1A2 2 0 0 0 2 7.05v11.59A1.36 1.36 0 0 0 3.36 20h3.19v-7.72L12 16.37l5.45-4.09V20h3.19A1.36 1.36 0 0 0 22 18.64V7.05a2 2 0 0 0-3.27-1.64"></path> </svg> </a> </div> </div> <br> <br> <div class="relative overflow-x-hidden py-8"> <div class="pointer-events-none absolute inset-y-0 left-0 w-32 bg-gradient-to-r from-[var(--background)] to-transparent z-20"></div> <div class="pointer-events-none absolute inset-y-0 right-0 w-32 bg-gradient-to-l from-[var(--background)] to-transparent z-20"></div> <div class="flex animate-scroll hover:animate-paused gap-12 md:gap-20 w-max"> <div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/astro.svg" alt="astro" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> Astro </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/react.svg" alt="react" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> React </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/typeScript.svg" alt="typeScript" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> TypeScript </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/tailwindcss.svg" alt="tailwindcss" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> Tailwindcss </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/next.svg" alt="next" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> Next </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/FastAPI.svg" alt="FastAPI" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> FastAPI </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/HTML5.svg" alt="HTML5" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> HTML5 </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/CSS3.svg" alt="CSS3" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> CSS3 </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/javaScript.svg" alt="javaScript" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> JavaScript </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/git.svg" alt="git" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> Git </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/mysql.svg" alt="mysql" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> Mysql </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/bash.svg" alt="bash" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> Bash </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/MongoDB.svg" alt="MongoDB" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> MongoDB </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/Python.svg" alt="Python" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> Python </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/PyTorch.svg" alt="PyTorch" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> PyTorch </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/astro.svg" alt="astro" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> Astro </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/react.svg" alt="react" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> React </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/typeScript.svg" alt="typeScript" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> TypeScript </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/tailwindcss.svg" alt="tailwindcss" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> Tailwindcss </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/next.svg" alt="next" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> Next </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/FastAPI.svg" alt="FastAPI" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> FastAPI </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/HTML5.svg" alt="HTML5" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> HTML5 </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/CSS3.svg" alt="CSS3" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> CSS3 </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/javaScript.svg" alt="javaScript" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> JavaScript </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/git.svg" alt="git" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> Git </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/mysql.svg" alt="mysql" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> Mysql </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/bash.svg" alt="bash" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> Bash </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/MongoDB.svg" alt="MongoDB" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> MongoDB </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/Python.svg" alt="Python" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> Python </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/PyTorch.svg" alt="PyTorch" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> PyTorch </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/astro.svg" alt="astro" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> Astro </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/react.svg" alt="react" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> React </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/typeScript.svg" alt="typeScript" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> TypeScript </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/tailwindcss.svg" alt="tailwindcss" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> Tailwindcss </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/next.svg" alt="next" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> Next </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/FastAPI.svg" alt="FastAPI" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> FastAPI </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/HTML5.svg" alt="HTML5" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> HTML5 </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/CSS3.svg" alt="CSS3" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> CSS3 </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/javaScript.svg" alt="javaScript" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> JavaScript </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/git.svg" alt="git" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> Git </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/mysql.svg" alt="mysql" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> Mysql </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/bash.svg" alt="bash" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> Bash </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/MongoDB.svg" alt="MongoDB" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> MongoDB </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/Python.svg" alt="Python" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> Python </span> </div><div class="flex items-center gap-2 group transition-all duration-300"> <img src="/svg/PyTorch.svg" alt="PyTorch" class="h-7 w-auto object-contain transition-transform group-hover:scale-110 opacity-60" width="30" height="30" loading="lazy"> <span class="text-lg font-medium text-[var(--white-icon)]"> PyTorch </span> </div> </div> </div>  <br> <br> <div class="flex flex-col lg:flex-row items-center gap-8"> <style>astro-island,astro-slot,astro-static-slot{display:contents}</style><script>(()=>{var e=async t=>{await(await t())()};(self.Astro||(self.Astro={})).load=e;window.dispatchEvent(new Event("astro:load"));})();;(()=>{var A=Object.defineProperty;var g=(i,o,a)=>o in i?A(i,o,{enumerable:!0,configurable:!0,writable:!0,value:a}):i[o]=a;var d=(i,o,a)=>g(i,typeof o!="symbol"?o+"":o,a);{let i={0:t=>m(t),1:t=>a(t),2:t=>new RegExp(t),3:t=>new Date(t),4:t=>new Map(a(t)),5:t=>new Set(a(t)),6:t=>BigInt(t),7:t=>new URL(t),8:t=>new Uint8Array(t),9:t=>new Uint16Array(t),10:t=>new Uint32Array(t),11:t=>1/0*t},o=t=>{let[l,e]=t;return l in i?i[l](e):void 0},a=t=>t.map(o),m=t=>typeof t!="object"||t===null?t:Object.fromEntries(Object.entries(t).map(([l,e])=>[l,o(e)]));class y extends HTMLElement{constructor(){super(...arguments);d(this,"Component");d(this,"hydrator");d(this,"hydrate",async()=>{var b;if(!this.hydrator||!this.isConnected)return;let e=(b=this.parentElement)==null?void 0:b.closest("astro-island[ssr]");if(e){e.addEventListener("astro:hydrate",this.hydrate,{once:!0});return}let c=this.querySelectorAll("astro-slot"),n={},h=this.querySelectorAll("template[data-astro-template]");for(let r of h){let s=r.closest(this.tagName);s!=null&&s.isSameNode(this)&&(n[r.getAttribute("data-astro-template")||"default"]=r.innerHTML,r.remove())}for(let r of c){let s=r.closest(this.tagName);s!=null&&s.isSameNode(this)&&(n[r.getAttribute("name")||"default"]=r.innerHTML)}let p;try{p=this.hasAttribute("props")?m(JSON.parse(this.getAttribute("props"))):{}}catch(r){let s=this.getAttribute("component-url")||"<unknown>",v=this.getAttribute("component-export");throw v&&(s+=` (export ${v})`),console.error(`[hydrate] Error parsing props for component ${s}`,this.getAttribute("props"),r),r}let u;await this.hydrator(this)(this.Component,p,n,{client:this.getAttribute("client")}),this.removeAttribute("ssr"),this.dispatchEvent(new CustomEvent("astro:hydrate"))});d(this,"unmount",()=>{this.isConnected||this.dispatchEvent(new CustomEvent("astro:unmount"))})}disconnectedCallback(){document.removeEventListener("astro:after-swap",this.unmount),document.addEventListener("astro:after-swap",this.unmount,{once:!0})}connectedCallback(){if(!this.hasAttribute("await-children")||document.readyState==="interactive"||document.readyState==="complete")this.childrenConnectedCallback();else{let e=()=>{document.removeEventListener("DOMContentLoaded",e),c.disconnect(),this.childrenConnectedCallback()},c=new MutationObserver(()=>{var n;((n=this.lastChild)==null?void 0:n.nodeType)===Node.COMMENT_NODE&&this.lastChild.nodeValue==="astro:end"&&(this.lastChild.remove(),e())});c.observe(this,{childList:!0}),document.addEventListener("DOMContentLoaded",e)}}async childrenConnectedCallback(){let e=this.getAttribute("before-hydration-url");e&&await import(e),this.start()}async start(){let e=JSON.parse(this.getAttribute("opts")),c=this.getAttribute("client");if(Astro[c]===void 0){window.addEventListener(`astro:${c}`,()=>this.start(),{once:!0});return}try{await Astro[c](async()=>{let n=this.getAttribute("renderer-url"),[h,{default:p}]=await Promise.all([import(this.getAttribute("component-url")),n?import(n):()=>()=>{}]),u=this.getAttribute("component-export")||"default";if(!u.includes("."))this.Component=h[u];else{this.Component=h;for(let f of u.split("."))this.Component=this.Component[f]}return this.hydrator=p,this.hydrate},e,this)}catch(n){console.error(`[astro-island] Error hydrating ${this.getAttribute("component-url")}`,n)}}attributeChangedCallback(){this.hydrate()}}d(y,"observedAttributes",["props"]),customElements.get("astro-island")||customElements.define("astro-island",y)}})();</script><astro-island uid="20yoHa" prefix="r2" component-url="/_astro/SkillsList.Cr2SOjf4.js" component-export="default" renderer-url="/_astro/client.BPIbHqJh.js" props="{}" ssr client="load" opts="{&quot;name&quot;:&quot;SkillsList&quot;,&quot;value&quot;:true}" await-children><div class="text-left pt-3 md:pt-9"><h3 class="text-[var(--white)] text-3xl md:text-4xl font-semibold md:mb-6">What I do?</h3><ul class="space-y-4 mt-4 text-lg"><li class="w-full"><div class="md:w-[400px] w-full bg-[#1414149c] rounded-2xl text-left hover:bg-opacity-80 transition-all border border-[var(--white-icon-tr)] cursor-pointer overflow-hidden"><div class="flex items-center gap-3 p-4"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6 text-[var(--sec)] opacity-70"><path d="M21 3C21.5523 3 22 3.44772 22 4V20C22 20.5523 21.5523 21 21 21H3C2.44772 21 2 20.5523 2 20V4C2 3.44772 2.44772 3 3 3H21ZM20 11H4V19H20V11ZM20 5H4V9H20V5ZM11 6V8H9V6H11ZM7 6V8H5V6H7Z"></path></svg><div class="flex items-center gap-2 flex-grow justify-between"><div class="min-w-0 max-w-[200px] md:max-w-none overflow-hidden"><span class="block truncate text-[var(--white)] text-lg">Full stack Development</span></div></div></div></div></li><li class="w-full"><div class="md:w-[400px] w-full bg-[#1414149c] rounded-2xl text-left hover:bg-opacity-80 transition-all border border-[var(--white-icon-tr)] cursor-pointer overflow-hidden"><div class="flex items-center gap-3 p-4"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6 text-[var(--sec)] opacity-70"><path d="M7 4V20H17V4H7ZM6 2H18C18.5523 2 19 2.44772 19 3V21C19 21.5523 18.5523 22 18 22H6C5.44772 22 5 21.5523 5 21V3C5 2.44772 5.44772 2 6 2ZM12 17C12.5523 17 13 17.4477 13 18C13 18.5523 12.5523 19 12 19C11.4477 19 11 18.5523 11 18C11 17.4477 11.4477 17 12 17Z"></path></svg><div class="flex items-center gap-2 flex-grow justify-between"><div class="min-w-0 max-w-[200px] md:max-w-none overflow-hidden"><span class="block truncate text-[var(--white)] text-lg">AIML</span></div></div></div></div></li><li class="w-full"><div class="md:w-[400px] w-full bg-[#1414149c] rounded-2xl text-left hover:bg-opacity-80 transition-all border border-[var(--white-icon-tr)] cursor-pointer overflow-hidden"><div class="flex items-center gap-3 p-4"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6 text-[var(--sec)] opacity-70"><path d="M5.7646 7.99998L5.46944 7.26944C5.26255 6.75737 5.50995 6.17454 6.02202 5.96765L15.2939 2.22158C15.8059 2.01469 16.3888 2.26209 16.5956 2.77416L22.2147 16.6819C22.4216 17.194 22.1742 17.7768 21.6622 17.9837L12.3903 21.7298C11.8783 21.9367 11.2954 21.6893 11.0885 21.1772L11.0002 20.9586V21H7.00021C6.44792 21 6.00021 20.5523 6.00021 20V19.7303L2.65056 18.377C2.13849 18.1701 1.89109 17.5873 2.09798 17.0752L5.7646 7.99998ZM8.00021 19H10.2089L8.00021 13.5333V19ZM6.00021 12.7558L4.32696 16.8972L6.00021 17.6084V12.7558ZM7.69842 7.44741L12.5683 19.5008L19.9858 16.5039L15.1159 4.45055L7.69842 7.44741ZM10.6766 9.47974C10.1645 9.68663 9.5817 9.43924 9.37481 8.92717C9.16792 8.4151 9.41532 7.83227 9.92739 7.62538C10.4395 7.41849 11.0223 7.66588 11.2292 8.17795C11.4361 8.69002 11.1887 9.27286 10.6766 9.47974Z"></path></svg><div class="flex items-center gap-2 flex-grow justify-between"><div class="min-w-0 max-w-[200px] md:max-w-none overflow-hidden"><span class="block truncate text-[var(--white)] text-lg">UI/UX Design &amp; Prototyping</span></div></div></div></div></li></ul></div><!--astro:end--></astro-island> <div class="flex justify-center md:w-full md:h-[450px] size-[290px] pt-3 md:pt-9 md:ml-16"> <div class=" relative flex h-[500px] w-full max-w-lg items-center justify-center overflow-hidden  "><span class="pointer-events-none whitespace-pre-wrap bg-gradient-to-b from-black to-gray-300/80 bg-clip-text text-center text-8xl font-semibold leading-none text-transparent dark:from-white dark:to-slate-900/10">Hm..</span><svg xmlns="http://www.w3.org/2000/svg" version="1.1" class="pointer-events-none absolute inset-0 size-full"><circle class="stroke-black/10 stroke-1 dark:stroke-white/10" cx="50%" cy="50%" r="80" fill="none" stroke-dasharray="4 4"></circle></svg><div style="--duration:20;--radius:80;--delay:-20" class="animate-orbit absolute flex size-full transform-gpu items-center justify-center rounded-full border [animation-delay:calc(var(--delay)*1000ms)] size-[30px] border-none "><svg width="50" height="50" viewBox="0 0 175.216 175.552" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="b" x1="85.915" x2="86.535" y1="32.567" y2="137.092" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#57d163"></stop><stop offset="1" stop-color="#23b33a"></stop></linearGradient><filter id="a" width="1.115" height="1.114" x="-.057" y="-.057" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="3.531"></feGaussianBlur></filter></defs><path d="m54.532 138.45 2.235 1.324c9.387 5.571 20.15 8.518 31.126 8.523h.023c33.707 0 61.139-27.426 61.153-61.135.006-16.335-6.349-31.696-17.895-43.251A60.75 60.75 0 0 0 87.94 25.983c-33.733 0-61.166 27.423-61.178 61.13a60.98 60.98 0 0 0 9.349 32.535l1.455 2.312-6.179 22.558zm-40.811 23.544L24.16 123.88c-6.438-11.154-9.825-23.808-9.821-36.772.017-40.556 33.021-73.55 73.578-73.55 19.681.01 38.154 7.669 52.047 21.572s21.537 32.383 21.53 52.037c-.018 40.553-33.027 73.553-73.578 73.553h-.032c-12.313-.005-24.412-3.094-35.159-8.954zm0 0" fill="#b3b3b3" filter="url(#a)"></path><path d="m12.966 161.238 10.439-38.114a73.42 73.42 0 0 1-9.821-36.772c.017-40.556 33.021-73.55 73.578-73.55 19.681.01 38.154 7.669 52.047 21.572s21.537 32.383 21.53 52.037c-.018 40.553-33.027 73.553-73.578 73.553h-.032c-12.313-.005-24.412-3.094-35.159-8.954z" fill="#ffffff"></path><path d="M87.184 25.227c-33.733 0-61.166 27.423-61.178 61.13a60.98 60.98 0 0 0 9.349 32.535l1.455 2.312-6.179 22.559 23.146-6.069 2.235 1.324c9.387 5.571 20.15 8.518 31.126 8.524h.023c33.707 0 61.14-27.426 61.153-61.135a60.75 60.75 0 0 0-17.895-43.251 60.75 60.75 0 0 0-43.235-17.929z" fill="url(#linearGradient1780)"></path><path d="M87.184 25.227c-33.733 0-61.166 27.423-61.178 61.13a60.98 60.98 0 0 0 9.349 32.535l1.455 2.313-6.179 22.558 23.146-6.069 2.235 1.324c9.387 5.571 20.15 8.517 31.126 8.523h.023c33.707 0 61.14-27.426 61.153-61.135a60.75 60.75 0 0 0-17.895-43.251 60.75 60.75 0 0 0-43.235-17.928z" fill="url(#b)"></path><path d="M68.772 55.603c-1.378-3.061-2.828-3.123-4.137-3.176l-3.524-.043c-1.226 0-3.218.46-4.902 2.3s-6.435 6.287-6.435 15.332 6.588 17.785 7.506 19.013 12.718 20.381 31.405 27.75c15.529 6.124 18.689 4.906 22.061 4.6s10.877-4.447 12.408-8.74 1.532-7.971 1.073-8.74-1.685-1.226-3.525-2.146-10.877-5.367-12.562-5.981-2.91-.919-4.137.921-4.746 5.979-5.819 7.206-2.144 1.381-3.984.462-7.76-2.861-14.784-9.124c-5.465-4.873-9.154-10.891-10.228-12.73s-.114-2.835.808-3.751c.825-.824 1.838-2.147 2.759-3.22s1.224-1.84 1.836-3.065.307-2.301-.153-3.22-4.032-10.011-5.666-13.647" fill="#ffffff" fill-rule="evenodd"></path></svg></div><svg xmlns="http://www.w3.org/2000/svg" version="1.1" class="pointer-events-none absolute inset-0 size-full"><circle class="stroke-black/10 stroke-1 dark:stroke-white/10" cx="50%" cy="50%" r="80" fill="none" stroke-dasharray="4 4"></circle></svg><div style="--duration:20;--radius:80;--delay:-10" class="animate-orbit absolute flex size-full transform-gpu items-center justify-center rounded-full border [animation-delay:calc(var(--delay)*1000ms)] size-[30px] border-none"><svg width="50" height="50" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6.017 4.313l55.333 -4.087c6.797 -0.583 8.543 -0.19 12.817 2.917l17.663 12.443c2.913 2.14 3.883 2.723 3.883 5.053v68.243c0 4.277 -1.553 6.807 -6.99 7.193L24.467 99.967c-4.08 0.193 -6.023 -0.39 -8.16 -3.113L3.3 79.94c-2.333 -3.113 -3.3 -5.443 -3.3 -8.167V11.113c0 -3.497 1.553 -6.413 6.017 -6.8z" fill="#ffffff"></path><path d="M61.35 0.227l-55.333 4.087C1.553 4.7 0 7.617 0 11.113v60.66c0 2.723 0.967 5.053 3.3 8.167l13.007 16.913c2.137 2.723 4.08 3.307 8.16 3.113l64.257 -3.89c5.433 -0.387 6.99 -2.917 6.99 -7.193V20.64c0 -2.21 -0.873 -2.847 -3.443 -4.733L74.167 3.143c-4.273 -3.107 -6.02 -3.5 -12.817 -2.917zM25.92 19.523c-5.247 0.353 -6.437 0.433 -9.417 -1.99L8.927 11.507c-0.77 -0.78 -0.383 -1.753 1.557 -1.947l53.193 -3.887c4.467 -0.39 6.793 1.167 8.54 2.527l9.123 6.61c0.39 0.197 1.36 1.36 0.193 1.36l-54.933 3.307 -0.68 0.047zM19.803 88.3V30.367c0 -2.53 0.777 -3.697 3.103 -3.893L86 22.78c2.14 -0.193 3.107 1.167 3.107 3.693v57.547c0 2.53 -0.39 4.67 -3.883 4.863l-60.377 3.5c-3.493 0.193 -5.043 -0.97 -5.043 -4.083zm59.6 -54.827c0.387 1.75 0 3.5 -1.75 3.7l-2.91 0.577v42.773c-2.527 1.36 -4.853 2.137 -6.797 2.137 -3.107 0 -3.883 -0.973 -6.21 -3.887l-19.03 -29.94v28.967l6.02 1.363s0 3.5 -4.857 3.5l-13.39 0.777c-0.39 -0.78 0 -2.723 1.357 -3.11l3.497 -0.97v-38.3L30.48 40.667c-0.39 -1.75 0.58 -4.277 3.3 -4.473l14.367 -0.967 19.8 30.327v-26.83l-5.047 -0.58c-0.39 -2.143 1.163 -3.7 3.103 -3.89l13.4 -0.78z" fill="#000000" fill-rule="evenodd" clip-rule="evenodd"></path></svg></div><svg xmlns="http://www.w3.org/2000/svg" version="1.1" class="pointer-events-none absolute inset-0 size-full"><circle class="stroke-black/10 stroke-1 dark:stroke-white/10" cx="50%" cy="50%" r="190" fill="none" stroke-dasharray="4 4"></circle></svg><div style="--duration:20;--radius:190;--delay:-10" class="animate-orbit absolute flex size-full transform-gpu items-center justify-center rounded-full border [animation-delay:calc(var(--delay)*1000ms)] [animation-direction:reverse] size-[50px] border-none "><svg width="50" height="50" viewBox="0 0 87.3 78" xmlns="http://www.w3.org/2000/svg"><path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"></path><path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47"></path><path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335"></path><path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"></path><path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"></path><path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"></path></svg></div><svg xmlns="http://www.w3.org/2000/svg" version="1.1" class="pointer-events-none absolute inset-0 size-full"><circle class="stroke-black/10 stroke-1 dark:stroke-white/10" cx="50%" cy="50%" r="190" fill="none" stroke-dasharray="4 4"></circle></svg><div style="--duration:20;--radius:190;--delay:-20" class="animate-orbit absolute flex size-full transform-gpu items-center justify-center rounded-full border [animation-delay:calc(var(--delay)*1000ms)] [animation-direction:reverse] size-[50px] border-none"><svg width="50" height="50" viewBox="0 0 438.549 438.549"><path fill="currentColor" d="M409.132 114.573c-19.608-33.596-46.205-60.194-79.798-79.8-33.598-19.607-70.277-29.408-110.063-29.408-39.781 0-76.472 9.804-110.063 29.408-33.596 19.605-60.192 46.204-79.8 79.8C9.803 148.168 0 184.854 0 224.63c0 47.78 13.94 90.745 41.827 128.906 27.884 38.164 63.906 64.572 108.063 79.227 5.14.954 8.945.283 11.419-1.996 2.475-2.282 3.711-5.14 3.711-8.562 0-.571-.049-5.708-.144-15.417a2549.81 2549.81 0 01-.144-25.406l-6.567 1.136c-4.187.767-9.469 1.092-15.846 1-6.374-.089-12.991-.757-19.842-1.999-6.854-1.231-13.229-4.086-19.13-8.559-5.898-4.473-10.085-10.328-12.56-17.556l-2.855-6.57c-1.903-4.374-4.899-9.233-8.992-14.559-4.093-5.331-8.232-8.945-12.419-10.848l-1.999-1.431c-1.332-.951-2.568-2.098-3.711-3.429-1.142-1.331-1.997-2.663-2.568-3.997-.572-1.335-.098-2.43 1.427-3.289 1.525-.859 4.281-1.276 8.28-1.276l5.708.853c3.807.763 8.516 3.042 14.133 6.851 5.614 3.806 10.229 8.754 13.846 14.842 4.38 7.806 9.657 13.754 15.846 17.847 6.184 4.093 12.419 6.136 18.699 6.136 6.28 0 11.704-.476 16.274-1.423 4.565-.952 8.848-2.383 12.847-4.285 1.713-12.758 6.377-22.559 13.988-29.41-10.848-1.14-20.601-2.857-29.264-5.14-8.658-2.286-17.605-5.996-26.835-11.14-9.235-5.137-16.896-11.516-22.985-19.126-6.09-7.614-11.088-17.61-14.987-29.979-3.901-12.374-5.852-26.648-5.852-42.826 0-23.035 7.52-42.637 22.557-58.817-7.044-17.318-6.379-36.732 1.997-58.24 5.52-1.715 13.706-.428 24.554 3.853 10.85 4.283 18.794 7.952 23.84 10.994 5.046 3.041 9.089 5.618 12.135 7.708 17.705-4.947 35.976-7.421 54.818-7.421s37.117 2.474 54.823 7.421l10.849-6.849c7.419-4.57 16.18-8.758 26.262-12.565 10.088-3.805 17.802-4.853 23.134-3.138 8.562 21.509 9.325 40.922 2.279 58.24 15.036 16.18 22.559 35.787 22.559 58.817 0 16.178-1.958 30.497-5.853 42.966-3.9 12.471-8.941 22.457-15.125 29.979-6.191 7.521-13.901 13.85-23.131 18.986-9.232 5.14-18.182 8.85-26.84 11.136-8.662 2.286-18.415 4.004-29.263 5.146 9.894 8.562 14.842 22.077 14.842 40.539v60.237c0 3.422 1.19 6.279 3.572 8.562 2.379 2.279 6.136 2.95 11.276 1.995 44.163-14.653 80.185-41.062 108.068-79.226 27.88-38.161 41.825-81.126 41.825-128.906-.01-39.771-9.818-76.454-29.414-110.049z"></path></svg></div></div> </div> </div> </div></section>  <section id="projects" class="py-12 border-t border-[#ffffff10] text-[var(--white)]"> <br> <div class="max-w-5xl mx-auto"> <h2 class="text-lg text-[var(--sec)] mb-2 shiny-sec">My work</h2> <h3 class="text-4xl md:text-5xl font-medium mb-8">Projects</h3> <div class="grid grid-cols-1 md:grid-cols-2 gap-12"> <div class="group"> <a href="https://hpedashboard-lake.vercel.app/" target="_blank" rel="noopener noreferrer" class="block"> <div class="rounded-2xl overflow-hidden shadow-lg hover:shadow-xl transition-shadow duration-300 mb-4"> <img src="/_astro/HpeStorage.BEztEY2S_ayOM.webp" alt="HPE Storage Monitoring Dashboard" width="906" height="524" loading="lazy" decoding="async" class="w-full h-48 md:h-72 object-cover group-hover:scale-105 transition-transform duration-300"> </div> <div class="flex items-center px-3"> <div class="flex-grow"> <h4 class="text-2xl font-semibold">HPE Storage Monitoring Dashboard</h4> <span class="py-1 text-sm text-[var(--white-icon)]"> HPE CPP Program </span> </div> <div class="flex gap-4 ml-auto"> <a target="_blank" href="https://github.com/VarshithPawarHR/HPE-Dashboard" aria-label="GitHub" class="size-14 flex justify-center items-center text-[var(--white-icon)] hover:text-white transition duration-300 ease-in-out border border-1 border-[var(--white-icon-tr)] p-3 rounded-xl bg-[#1414149c] hover:bg-[var(--white-icon-tr)]"> <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-7"> <path d="M24 12L18.3431 17.6569L16.9289 16.2426L21.1716 12L16.9289 7.75736L18.3431 6.34315L24 12ZM2.82843 12L7.07107 16.2426L5.65685 17.6569L0 12L5.65685 6.34315L7.07107 7.75736L2.82843 12ZM9.78845 21H7.66009L14.2116 3H16.3399L9.78845 21Z"></path> </svg> </a> <a target="_blank" href="https://hpedashboard-lake.vercel.app/" aria-label="Preview" class="size-14 flex justify-center items-center text-[var(--white-icon)] hover:text-white transition duration-300 ease-in-out border border-1 border-[var(--white-icon-tr)] p-3 rounded-xl bg-[#1414149c] hover:bg-[var(--white-icon-tr)]"> <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-7"> <path d="M16.0037 9.41421L7.39712 18.0208L5.98291 16.6066L14.5895 8H7.00373V6H18.0037V17H16.0037V9.41421Z"></path> </svg> </a> </div> </div> </a> </div><div class="group"> <a href="https://www.kvdhama.com" target="_blank" rel="noopener noreferrer" class="block"> <div class="rounded-2xl overflow-hidden shadow-lg hover:shadow-xl transition-shadow duration-300 mb-4"> <img src="/_astro/kvdhama.BM3RimTn_Z3I1eE.webp" alt="Krishnaveni-ashrayadhama" width="1898" height="916" loading="lazy" decoding="async" class="w-full h-48 md:h-72 object-cover group-hover:scale-105 transition-transform duration-300"> </div> <div class="flex items-center px-3"> <div class="flex-grow"> <h4 class="text-2xl font-semibold">Krishnaveni-ashrayadhama</h4> <span class="py-1 text-sm text-[var(--white-icon)]"> Inspirante-Technology </span> </div> <div class="flex gap-4 ml-auto"> <a target="_blank" href="https://github.com/Inspirante-Tech/krishnaveni-ashrayadhama" aria-label="GitHub" class="size-14 flex justify-center items-center text-[var(--white-icon)] hover:text-white transition duration-300 ease-in-out border border-1 border-[var(--white-icon-tr)] p-3 rounded-xl bg-[#1414149c] hover:bg-[var(--white-icon-tr)]"> <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-7"> <path d="M24 12L18.3431 17.6569L16.9289 16.2426L21.1716 12L16.9289 7.75736L18.3431 6.34315L24 12ZM2.82843 12L7.07107 16.2426L5.65685 17.6569L0 12L5.65685 6.34315L7.07107 7.75736L2.82843 12ZM9.78845 21H7.66009L14.2116 3H16.3399L9.78845 21Z"></path> </svg> </a> <a target="_blank" href="https://www.kvdhama.com" aria-label="Preview" class="size-14 flex justify-center items-center text-[var(--white-icon)] hover:text-white transition duration-300 ease-in-out border border-1 border-[var(--white-icon-tr)] p-3 rounded-xl bg-[#1414149c] hover:bg-[var(--white-icon-tr)]"> <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-7"> <path d="M16.0037 9.41421L7.39712 18.0208L5.98291 16.6066L14.5895 8H7.00373V6H18.0037V17H16.0037V9.41421Z"></path> </svg> </a> </div> </div> </a> </div><div class="group"> <a href="https://acenmamit.vercel.app/" target="_blank" rel="noopener noreferrer" class="block"> <div class="rounded-2xl overflow-hidden shadow-lg hover:shadow-xl transition-shadow duration-300 mb-4"> <img src="/_astro/ace.B5MwTos4_1QlIm8.webp" alt="ACE Website" width="1895" height="913" loading="lazy" decoding="async" class="w-full h-48 md:h-72 object-cover group-hover:scale-105 transition-transform duration-300"> </div> <div class="flex items-center px-3"> <div class="flex-grow"> <h4 class="text-2xl font-semibold">ACE Website</h4> <span class="py-1 text-sm text-[var(--white-icon)]"> College Association </span> </div> <div class="flex gap-4 ml-auto"> <a target="_blank" href="https://github.com/ACE-NMAMIT/ace-website" aria-label="GitHub" class="size-14 flex justify-center items-center text-[var(--white-icon)] hover:text-white transition duration-300 ease-in-out border border-1 border-[var(--white-icon-tr)] p-3 rounded-xl bg-[#1414149c] hover:bg-[var(--white-icon-tr)]"> <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-7"> <path d="M24 12L18.3431 17.6569L16.9289 16.2426L21.1716 12L16.9289 7.75736L18.3431 6.34315L24 12ZM2.82843 12L7.07107 16.2426L5.65685 17.6569L0 12L5.65685 6.34315L7.07107 7.75736L2.82843 12ZM9.78845 21H7.66009L14.2116 3H16.3399L9.78845 21Z"></path> </svg> </a> <a target="_blank" href="https://acenmamit.vercel.app/" aria-label="Preview" class="size-14 flex justify-center items-center text-[var(--white-icon)] hover:text-white transition duration-300 ease-in-out border border-1 border-[var(--white-icon-tr)] p-3 rounded-xl bg-[#1414149c] hover:bg-[var(--white-icon-tr)]"> <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-7"> <path d="M16.0037 9.41421L7.39712 18.0208L5.98291 16.6066L14.5895 8H7.00373V6H18.0037V17H16.0037V9.41421Z"></path> </svg> </a> </div> </div> </a> </div><div class="group"> <a href="#" target="_blank" rel="noopener noreferrer" class="block"> <div class="rounded-2xl overflow-hidden shadow-lg hover:shadow-xl transition-shadow duration-300 mb-4"> <img src="/_astro/capture.BNSdQWCM_ZXQNN.webp" alt="Capture Incridea" width="1177" height="533" loading="lazy" decoding="async" class="w-full h-48 md:h-72 object-cover group-hover:scale-105 transition-transform duration-300"> </div> <div class="flex items-center px-3"> <div class="flex-grow"> <h4 class="text-2xl font-semibold">Capture Incridea</h4> <span class="py-1 text-sm text-[var(--white-icon)]"> Incridea </span> </div> <div class="flex gap-4 ml-auto"> <a target="_blank" href="https://github.com/incridea-nmamit/capture-incridea" aria-label="GitHub" class="size-14 flex justify-center items-center text-[var(--white-icon)] hover:text-white transition duration-300 ease-in-out border border-1 border-[var(--white-icon-tr)] p-3 rounded-xl bg-[#1414149c] hover:bg-[var(--white-icon-tr)]"> <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-7"> <path d="M24 12L18.3431 17.6569L16.9289 16.2426L21.1716 12L16.9289 7.75736L18.3431 6.34315L24 12ZM2.82843 12L7.07107 16.2426L5.65685 17.6569L0 12L5.65685 6.34315L7.07107 7.75736L2.82843 12ZM9.78845 21H7.66009L14.2116 3H16.3399L9.78845 21Z"></path> </svg> </a> <a target="_blank" href="#" aria-label="Preview" class="size-14 flex justify-center items-center text-[var(--white-icon)] hover:text-white transition duration-300 ease-in-out border border-1 border-[var(--white-icon-tr)] p-3 rounded-xl bg-[#1414149c] hover:bg-[var(--white-icon-tr)]"> <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-7"> <path d="M16.0037 9.41421L7.39712 18.0208L5.98291 16.6066L14.5895 8H7.00373V6H18.0037V17H16.0037V9.41421Z"></path> </svg> </a> </div> </div> </a> </div> </div> <br> <a target="_blank" href="https://github.com/VarshithPawarHR?tab=repositories" aria-label="GitHub" class="w-full flex items-center justify-center gap-2 mt-9 text-[var(--white-icon)] hover:text-white transition duration-300 ease-in-out border border-[var(--white-icon-tr)] p-3 rounded-full bg-[#1414149c] hover:bg-[var(--white-icon-tr)] hover:scale-105"> <span class="md:text-lg text-md">More projects on</span> <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-6"> <path d="M12.001 2C6.47598 2 2.00098 6.475 2.00098 12C2.00098 16.425 4.86348 20.1625 8.83848 21.4875C9.33848 21.575 9.52598 21.275 9.52598 21.0125C9.52598 20.775 9.51348 19.9875 9.51348 19.15C7.00098 19.6125 6.35098 18.5375 6.15098 17.975C6.03848 17.6875 5.55098 16.8 5.12598 16.5625C4.77598 16.375 4.27598 15.9125 5.11348 15.9C5.90098 15.8875 6.46348 16.625 6.65098 16.925C7.55098 18.4375 8.98848 18.0125 9.56348 17.75C9.65098 17.1 9.91348 16.6625 10.201 16.4125C7.97598 16.1625 5.65098 15.3 5.65098 11.475C5.65098 10.3875 6.03848 9.4875 6.67598 8.7875C6.57598 8.5375 6.22598 7.5125 6.77598 6.1375C6.77598 6.1375 7.61348 5.875 9.52598 7.1625C10.326 6.9375 11.176 6.825 12.026 6.825C12.876 6.825 13.726 6.9375 14.526 7.1625C16.4385 5.8625 17.276 6.1375 17.276 6.1375C17.826 7.5125 17.476 8.5375 17.376 8.7875C18.0135 9.4875 18.401 10.375 18.401 11.475C18.401 15.3125 16.0635 16.1625 13.8385 16.4125C14.201 16.725 14.5135 17.325 14.5135 18.2625C14.5135 19.6 14.501 20.675 14.501 21.0125C14.501 21.275 14.6885 21.5875 15.1885 21.4875C19.259 20.1133 21.9999 16.2963 22.001 12C22.001 6.475 17.526 2 12.001 2Z"></path> </svg> </a> </div> </section> <section id="contact" class="w-full py-12 border-t border-[#ffffff10]"> <div class="max-w-5xl mx-auto"> <h2 class="text-lg text-[var(--sec)] mb-2 shiny-sec">Let's talk</h2> <h3 class="text-4xl md:text-5xl font-medium text-[var(--white)] mb-6">
+Contact
+</h3> <div class="grid grid-cols-1 md:grid-cols-2 gap-8"> <div class="text-[var(--white-icon)]"> <p class="mb-4">
+Have a question or a project in mind? Feel free to reach out.
+</p> <div class="flex items-center gap-2"> <span>Location:</span> <span class="text-[var(--white)]">India , Karnataka , Mangaluru</span> </div> </div> <div> <form id="contact-form" action="https://formspree.io/f/xovqdajb" method="POST" class="flex flex-col gap-4"> <input type="text" name="from_name" placeholder="Name" required class="px-4 py-2 bg-[#1414149c] text-[var(--white)] border border-[var(--white-icon-tr)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--sec)]"> <input type="email" name="reply_to" placeholder="Email" required class="px-4 py-2 bg-[#1414149c] text-[var(--white)] border border-[var(--white-icon-tr)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--sec)]"> <textarea name="message" placeholder="Message" rows="6" required class="px-4 py-2 bg-[#1414149c] text-[var(--white)] border border-[var(--white-icon-tr)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--sec)] resize-none"></textarea> <button type="submit" class="px-4 py-2 bg-[var(--white-icon-tr)] text-[var(--white)] rounded-lg opacity-60 transition-opacity border border-[var(--white-icon-tr)] hover:opacity-100 hover:bg-[var(--white-icon-tr)]">
+Submit
+</button> </form> <div id="form-message" class="hidden justify-center items-center mt-4 text-[var(--white)] text-lg">
+✅ Thank you for your message!
+</div> </div> </div> </div> </section> <script type="module">
+  const form = document.getElementById("contact-form");
+  const formMessage = document.getElementById("form-message");
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const formData = new FormData(form);
+
+    try {
+      const response = await fetch(form.action, {
+        method: "POST",
+        body: formData,
+        headers: { Accept: "application/json" },
+      });
+      if (response.ok) {
+        form.reset();
+        form.style.display = "none";
+        formMessage.classList.remove("hidden");
+      } else {
+        const data = await response.json();
+        console.error("Error response:", data);
+        alert("There was a problem sending your message.");
+      }
+    } catch (error) {
+      console.error("Error:", error);
+      alert("There was a problem sending your message.");
+    }
+  });
+</script> <footer class="w-full py-12 border-t border-[#ffffff10]"> <div class="max-w-5xl mx-auto"> <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-10"> <div class="flex flex-col lg:items-start items-center space-y-6 gap-9"> <div class="flex space-x-6 sm:space-x-8"> <a href="https://github.com/VarshithPawarHR" target="_blank" class="flex flex-col items-center group" aria-label="GitHub"> <div class="text-[var(--white-icon)] hover:text-[var(--white)] transition duration-300 ease-in-out"> <div><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-8"><path d="M12.001 2C6.47598 2 2.00098 6.475 2.00098 12C2.00098 16.425 4.86348 20.1625 8.83848 21.4875C9.33848 21.575 9.52598 21.275 9.52598 21.0125C9.52598 20.775 9.51348 19.9875 9.51348 19.15C7.00098 19.6125 6.35098 18.5375 6.15098 17.975C6.03848 17.6875 5.55098 16.8 5.12598 16.5625C4.77598 16.375 4.27598 15.9125 5.11348 15.9C5.90098 15.8875 6.46348 16.625 6.65098 16.925C7.55098 18.4375 8.98848 18.0125 9.56348 17.75C9.65098 17.1 9.91348 16.6625 10.201 16.4125C7.97598 16.1625 5.65098 15.3 5.65098 11.475C5.65098 10.3875 6.03848 9.4875 6.67598 8.7875C6.57598 8.5375 6.22598 7.5125 6.77598 6.1375C6.77598 6.1375 7.61348 5.875 9.52598 7.1625C10.326 6.9375 11.176 6.825 12.026 6.825C12.876 6.825 13.726 6.9375 14.526 7.1625C16.4385 5.8625 17.276 6.1375 17.276 6.1375C17.826 7.5125 17.476 8.5375 17.376 8.7875C18.0135 9.4875 18.401 10.375 18.401 11.475C18.401 15.3125 16.0635 16.1625 13.8385 16.4125C14.201 16.725 14.5135 17.325 14.5135 18.2625C14.5135 19.6 14.501 20.675 14.501 21.0125C14.501 21.275 14.6885 21.5875 15.1885 21.4875C19.259 20.1133 21.9999 16.2963 22.001 12C22.001 6.475 17.526 2 12.001 2Z"></path></svg></div> </div> </a><a href="https://www.linkedin.com/in/varshithpawarhr" target="_blank" class="flex flex-col items-center group" aria-label="LinkedIn"> <div class="text-[var(--white-icon)] hover:text-[var(--white)] transition duration-300 ease-in-out"> <div><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-8"><path d="M18.3362 18.339H15.6707V14.1622C15.6707 13.1662 15.6505 11.8845 14.2817 11.8845C12.892 11.8845 12.6797 12.9683 12.6797 14.0887V18.339H10.0142V9.75H12.5747V10.9207H12.6092C12.967 10.2457 13.837 9.53325 15.1367 9.53325C17.8375 9.53325 18.337 11.3108 18.337 13.6245V18.339H18.3362ZM7.00373 8.57475C6.14573 8.57475 5.45648 7.88025 5.45648 7.026C5.45648 6.1725 6.14648 5.47875 7.00373 5.47875C7.85873 5.47875 8.55173 6.1725 8.55173 7.026C8.55173 7.88025 7.85798 8.57475 7.00373 8.57475ZM8.34023 18.339H5.66723V9.75H8.34023V18.339ZM19.6697 3H4.32923C3.59498 3 3.00098 3.5805 3.00098 4.29675V19.7033C3.00098 20.4202 3.59498 21 4.32923 21H19.6675C20.401 21 21.001 20.4202 21.001 19.7033V4.29675C21.001 3.5805 20.401 3 19.6675 3H19.6697Z"></path></svg></div> </div> </a><a href="https://mail.google.com/mail/?view=cm&fs=1&to=varshithpawarhr@gmail.com.com&su=Hey%20Varshith!" target="_blank" class="flex flex-col items-center group" aria-label="Email"> <div class="text-[var(--white-icon)] hover:text-[var(--white)] transition duration-300 ease-in-out"> <div><svg xmlns="http://www.w3.org/2000/svg" width="2.1em" height="2.1em" viewBox="0 0 24 24"><path fill="currentColor" d="m18.73 5.41l-1.28 1L12 10.46L6.55 6.37l-1.28-1A2 2 0 0 0 2 7.05v11.59A1.36 1.36 0 0 0 3.36 20h3.19v-7.72L12 16.37l5.45-4.09V20h3.19A1.36 1.36 0 0 0 22 18.64V7.05a2 2 0 0 0-3.27-1.64"/></svg></div> </div> </a> </div> </div> <div class="flex flex-col items-center space-y-6"> <div class="grid grid-cols-1 gap-3 w-full max-w-xs py-6"> <div class="flex items-center justify-center lg:justify-normal space-x-3"> <span class="text-[var(--white-icon)] text-sm"> Built with </span> <img src="/svg/astro.svg" alt="Astro Logo" class="h-5 w-5 object-contain filter brightness-0 invert opacity-50" loading="lazy"> <span class="text-[var(--white-icon)] text-sm"> Astro </span> </div><div class="flex items-center justify-center lg:justify-normal space-x-3"> <span class="text-[var(--white-icon)] text-sm"> Styled with </span> <img src="/svg/tailwindcss.svg" alt="TailwindCSS Logo" class="h-5 w-5 object-contain filter brightness-0 invert opacity-50" loading="lazy"> <span class="text-[var(--white-icon)] text-sm"> TailwindCSS </span> </div><div class="flex items-center justify-center lg:justify-normal space-x-3"> <span class="text-[var(--white-icon)] text-sm"> Deployed on </span> <img src="/svg/vercel.svg" alt="Vercel Logo" class="h-5 w-5 object-contain filter brightness-0 invert opacity-50" loading="lazy"> <span class="text-[var(--white-icon)] text-sm"> Vercel </span> </div> </div> </div> <div class="flex flex-col items-center lg:items-start space-y-6"> <div class="w-full max-w-xs"> <iframe style="border-radius:12px; border:0;" src="https://open.spotify.com/embed/album/1O1QvxhWr8eDP8q5FUwbKc?utm_source=generator&theme=0" class="w-full h-40" allowfullscreen="allowfullscreen" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe> </div> </div> </div> <div class="mt-12 pt-8 border-t border-[#ffffff10]"> <p class="text-center text-sm text-[var(--white-icon)] space-y-2"> <!-- If you are using this template, by MIT License you can't remove the copyright notice --> <span class="block sm:inline">Copyright © 2025 <a href="https://github.com/VarshithPawarHR">Varshith Pawar H R</a>. All rights reserved.</span> </p> </div> </div> </footer>  </body></html>
