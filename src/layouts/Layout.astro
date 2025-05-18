@@ -4,6 +4,7 @@ interface Props {
 }
 
 const { title } = Astro.props;
+import FluidEffect from '@components/fluideffect.astro';
 ---
 
 <!doctype html>
@@ -12,13 +13,13 @@ const { title } = Astro.props;
     <meta charset="UTF-8" />
     <meta name="description" content="Software Developer" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" type="image/png" href="/favicon.png" />
-    <meta property="og:title" content="Oscar Hernandez" />
+    <link rel="icon" type="image/png" href="/favicon.svg" />
+    <meta property="og:title" content="Varshith Pawar H R" />
     <meta property="og:description" content="Software Developer" />
-    <meta property="og:image" content="https://oscarhernandez.vercel.app/og.image.png" />
-    <meta property="og:url" content="https://oscarhernandez.vercel.app" />
+    <meta property="og:image" content="#" />
+    <meta property="og:url" content="#" />
     <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="Oscar Hernandez Portfolio" />
+    <meta property="og:site_name" content="Varshith Pawar H R" />
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -42,26 +43,28 @@ const { title } = Astro.props;
 
     <title>{title}</title>
   </head>
-  <body class="bg-[--background] md:px-48 lg:px-20 px-9">
+  <body class="bg-[--background] text-[--white] px-6 md:px-12 lg:px-24 xl:px-48">
+    <FluidEffect/>
     <slot />
   </body>
 </html>
 
 <style is:global>
   :root {
-    --background: #101010;
-    --sec: #a476ff;
+    --background: #0c0c0c;
+    --background-alt: #161616;
+    --sec: #00e5ff;
+    --accent-purple: #8a2be2;
+    --accent-green: #39ff14;
+    --pink: #ff007f;
     --white: #dfdfdf;
     --white-icon: #f3f3f398;
     --white-icon-tr: #f3f3f310;
+    --shadow: 0 0 10px rgba(0, 229, 255, 0.3);
   }
 
   * {
-    font-family:
-      "montserrat",
-      -apple-system,
-      system-ui,
-      sans-serif;
+    font-family: "Montserrat", -apple-system, system-ui, sans-serif;
     box-sizing: border-box;
     padding: 0;
     margin: 0;
@@ -72,29 +75,34 @@ const { title } = Astro.props;
     color: var(--background);
   }
 
-  /* Scrollbar styles */
+  .glow {
+    color: var(--sec);
+    text-shadow: 0 0 8px var(--sec);
+  }
 
+  /* Scrollbar styles */
   ::-webkit-scrollbar {
     width: 15px;
   }
 
   ::-webkit-scrollbar-track {
-    background: var(--container);
+    background: var(--background-alt);
     border-radius: 30px;
   }
 
   ::-webkit-scrollbar-thumb {
-    background: var(--background);
+    background: var(--sec);
     border-radius: 10px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
     background: var(--pink);
+    box-shadow: 0 0 6px var(--pink);
   }
 
-  /* Scrollbar styles for Firefox */
+  /* Firefox scrollbar */
   * {
     scrollbar-width: thin;
-    scrollbar-color: var(--line) var(--container);
+    scrollbar-color: var(--white) var(--background-alt);
   }
 </style>
