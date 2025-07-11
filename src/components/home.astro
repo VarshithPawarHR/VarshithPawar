@@ -2,13 +2,8 @@
 import LogoWall from "../components/logoWall.astro";
 import SkillsList from "../React/SkillsList.tsx";
 import { OrbitingCirclesDemo } from "./OrbitingCirclesDemo";
-
 import ProfileCard from './ProfileCard'
-
-
-
 ---
-
 <section class="text-[var(--white)] mt-12 md:mt-0" id="home">
   <div class="max-w-5xl mx-auto space-y-8 md:py-36 pb-14">
     <div class="text-left space-y-4">
@@ -23,12 +18,12 @@ import ProfileCard from './ProfileCard'
         >
           Engineering <br /> Student
         </h1>
-        <p class="text-md md:text-2xl text-[var(--white-icon)]">
-  Transforming ideas into interactive and seamless digital experiences  
-  through <span class="text-[var(--sec)] shiny-sec">full-stack</span> development — blending intuitive UIs with powerful backend logic,  
-  and applying <span class="text-[var(--sec)] shiny-sec">machine learning</span> to real-world problems.
+        <span class="text-md md:text-2xl text-[var(--white-icon)]">
+  To tell about me and what i do now I tripped and fell into coding during engineering 😆.  
+  First, I tried my hand at UI/UX (spoiler: my first designs were tragic - yeah I've improved).  
+  Now I'm all in, <span class="shiny-sec">building stuff for the web</span> and poking at <span class="shiny-sec">AI/ML</span> just to see what breaks.When I'm not debugging life and code, I'm probably running an event somewhere or vibing with good people.  
+  Got an idea? HMU — I'm always up for a good build or a good story/tea.
 </p>
-<br>
       </div>
       <div class="flex justify-start gap-2 pt-3 md:pt-6">
         <a
@@ -83,10 +78,26 @@ import ProfileCard from './ProfileCard'
             ></path>
           </svg>
         </a>
+ <a
+    target="_blank"
+    href="https://drive.google.com/file/d/1VdWE5GBnkTg7UyNErjxLJygiCBaujn-N/view?usp=sharing" 
+    aria-label="Download CV"
+    class="text-[var(--white-icon)] hover:text-white transition duration-300 ease-in-out border border-1 border-[var(--white-icon-tr)] p-3 rounded-xl bg-[#1414149c] hover:bg-[var(--white-icon-tr)]"
+  >
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      class="size-8"
+    >
+      <path
+        d="M6 2a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6H6zm7 1.5L18.5 9H13V3.5zM8 13h8v2H8v-2zm0 4h8v2H8v-2z"
+      />
+    </svg>
+  </a>
+
       </div>
     </div>
-<br>
-<br>
 
     <LogoWall />
     <br>
@@ -114,6 +125,8 @@ import ProfileCard from './ProfileCard'
     </div>
   </div>
 </section>
+
+
 <style is:global>
   .shiny-sec {
    background: linear-gradient(135deg, #00f0ff 25%, #00aaff 50%, #00f0ff 75%);
