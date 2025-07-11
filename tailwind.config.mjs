@@ -23,6 +23,7 @@ export default {
       animation: {
         scale: "scaleAnim 300ms ease-in-out",
         orbit: "orbit calc(var(--duration)*1s) linear infinite",
+         'spin-slow': 'spin 10s linear infinite',
       },
     },
   },
