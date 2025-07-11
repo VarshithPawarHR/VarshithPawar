@@ -2,7 +2,11 @@
 import LogoWall from "../components/logoWall.astro";
 import SkillsList from "../React/SkillsList.tsx";
 import { OrbitingCirclesDemo } from "./OrbitingCirclesDemo";
-import Lanyard from "./idcard.jsx";
+
+import ProfileCard from './ProfileCard'
+
+
+
 ---
 
 <section class="text-[var(--white)] mt-12 md:mt-0" id="home">
@@ -93,7 +97,20 @@ import Lanyard from "./idcard.jsx";
       <div
         class="flex justify-center md:w-full md:h-[450px] size-[290px] pt-3 md:pt-9 md:ml-16"
       >
-      <OrbitingCirclesDemo/>
+     
+ <ProfileCard
+  name="Varshith Pawar "
+  title="Student"
+  handle="mr.pawar_10"
+  status="Open to work"
+  contactText="Hola"
+  avatarUrl="/avatar.png"
+  showUserInfo={true}
+  enableTilt={true}
+  onContactClick={() => console.log('Contact clicked')}
+/>
+
+
     </div>
   </div>
 </section>

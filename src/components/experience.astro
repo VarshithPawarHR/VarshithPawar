@@ -1,0 +1,56 @@
+---
+interface ExperienceItem {
+  company: string;
+  role: string;
+  duration: string;
+  description: string;
+  link: string;
+  techStack: string[];
+}
+
+const experiences: ExperienceItem[] = [
+  {
+    company: "Hewlett Packard Enterprise",
+    role: "CPP Intern",
+    duration: "Jan 2025 – Jul 2025",
+    description: "Built a dynamic storage monitoring dashboard for HPE servers, implementing live graphs, alerting and user-friendly interfaces.",
+    link: "https://github.com/VarshithPawarHR/HPE-Dashboard",
+    techStack: ["Next.js", "FastAPI", "MongoDB", "Python"],
+  },
+  {
+    company: "Inspirante Technology Solutions",
+    role: "Software Development Engineer Trainee",
+    duration: "Jun 2024 – Jul 2024",
+    description: "Developed and deployed a responsive website for Krishnaveni Ashrayadhama, focusing on modern UI and accessibility.",
+    link: "https://www.kvdhama.com",
+    techStack: ["Next.js", "Sanity CMS", "Tailwind CSS"],
+  },
+];
+---
+
+<section id="experience" class="py-12 border-t border-[#ffffff10] text-[var(--white)]">
+  <div class="max-w-5xl mx-auto">
+    <h2 class="text-lg text-[var(--sec)] mb-2 shiny-sec">Experience</h2>
+    <h3 class="text-4xl md:text-5xl font-medium mb-8">Where I've worked</h3>
+
+    <div class="space-y-8">
+      {experiences.map((exp) => (
+        <div>
+          <h4 class="text-2xl font-semibold mb-1">
+            <a href={exp.link} target="_blank" class="hover:underline">{exp.company}</a>
+          </h4>
+          <p class="text-md mb-1 text-[var(--white-icon)]">{exp.role}</p>
+          <p class="text-sm mb-2 text-gray-400">{exp.duration}</p>
+          <p class="text-[var(--white-icon)] mb-3">{exp.description}</p>
+          <div class="flex flex-wrap gap-2">
+            {exp.techStack.map((tech) => (
+              <span class="px-3 py-1 border border-[var(--white-icon-tr)] rounded-full text-xs text-[var(--white-icon)] bg-[#1414149c]">
+                {tech}
+              </span>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
