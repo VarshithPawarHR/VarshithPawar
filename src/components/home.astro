@@ -109,13 +109,16 @@ import ProfileCard from './ProfileCard'
         class="flex justify-center md:w-full md:h-[450px] size-[290px] pt-3 md:pt-9 md:ml-16"
       >
      
- <ProfileCard
+<ProfileCard
   name="Varshith Pawar "
   title="Student"
   handle="mr.pawar_10"
   status="Open to work"
   contactText="Hola"
   avatarUrl="/avatar.png"
+  behindGradient="linear-gradient(to right, #000, #fff)" <!-- example -->
+  innerGradient="linear-gradient(to bottom, #000, #fff)"  <!-- example -->
+  miniAvatarUrl="/avatar.png" <!-- example -->
   showUserInfo={true}
   enableTilt={true}
   onContactClick={() => console.log('Contact clicked')}
